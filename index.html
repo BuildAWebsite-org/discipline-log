@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Discipline Log</title>
+<meta name="theme-color" content="#0a0d11">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <div class="brand-text">
+        <h1>DISCIPLINE<span>LOG</span></h1>
+        <p class="tagline">consistency, logged.</p>
+      </div>
+    </div>
+
+    <div class="month-nav">
+      <button class="nav-btn" id="prevMonth" aria-label="Previous month">‹</button>
+      <div class="month-label">
+        <span id="monthName">JUL</span>
+        <span id="yearName">2026</span>
+      </div>
+      <button class="nav-btn" id="nextMonth" aria-label="Next month">›</button>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat">
+        <span class="stat-value" id="statStreak">0</span>
+        <span class="stat-label">streak</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="statBest">0</span>
+        <span class="stat-label">best</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="statAvg">0%</span>
+        <span class="stat-label">avg</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <section class="log-panel" aria-label="Habit grid">
+      <div class="log-scroll">
+        <div class="log-grid" id="logGrid">
+          <!-- rendered by JS -->
+        </div>
+        <div class="empty-state" id="emptyState" hidden>
+          <p>No habits logged yet.</p>
+          <p class="empty-sub">Add your first one below to start the record.</p>
+        </div>
+      </div>
+      <button class="add-habit-btn" id="addHabitBtn">
+        <span class="plus">+</span> Add habit
+      </button>
+    </section>
+
+    <section class="chart-panel" id="chartPanel" style="--chart-h: 260px;">
+      <div class="resize-handle" id="resizeHandle" aria-hidden="true"></div>
+      <div class="chart-head">
+        <h2>Consistency</h2>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="chart-body">
+        <svg id="chartSvg" preserveAspectRatio="none"></svg>
+        <div class="chart-tooltip" id="chartTooltip" hidden></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<template id="rowTemplate">
+  <div class="habit-row" draggable="false">
+    <div class="habit-name-cell">
+      <span class="habit-dot"></span>
+      <input class="habit-name-input" type="text" maxlength="40" spellcheck="false">
+      <button class="habit-delete" title="Remove habit" aria-label="Remove habit">×</button>
+    </div>
+    <div class="habit-days"></div>
+  </div>
+</template>
+
+<template id="addFormTemplate">
+  <div class="add-habit-form">
+    <div class="color-picker" id="colorPicker"></div>
+    <input class="new-habit-input" type="text" maxlength="40" placeholder="Name this habit…" spellcheck="false" autocomplete="off">
+    <button class="confirm-add" aria-label="Confirm">✓</button>
+    <button class="cancel-add" aria-label="Cancel">×</button>
+  </div>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

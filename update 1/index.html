@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Discipline Log</title>
+<meta name="theme-color" content="#0a0d11">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Discipline Log">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <div class="brand-text">
+        <h1>DISCIPLINE<span>LOG</span></h1>
+        <p class="tagline">consistency, logged.</p>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button class="profile-btn" id="profileBtn" title="Switch profile / settings">
+        <span class="profile-dot"></span>
+        <span id="profileName">—</span>
+      </button>
+      <button class="menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-haspopup="true">
+        <span class="menu-bars"><span></span><span></span><span></span></span>
+      </button>
+      <nav class="dropdown-menu" id="dropdownMenu" hidden>
+        <button class="menu-item active" data-page="today">Today</button>
+        <button class="menu-item" data-page="journal">Journal</button>
+        <button class="menu-item" data-page="insights">Insights</button>
+        <button class="menu-item" data-page="settings">Settings</button>
+        <button class="menu-item" data-page="export">Export / Backup</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ================= TODAY (habit log) ================= -->
+    <section class="page" id="page-today" data-page="today">
+
+      <div class="page-toprow">
+        <div class="month-nav">
+          <button class="nav-btn" id="prevMonth" aria-label="Previous month">‹</button>
+          <div class="month-label">
+            <span id="monthName">JUL</span>
+            <span id="yearName">2026</span>
+          </div>
+          <button class="nav-btn" id="nextMonth" aria-label="Next month">›</button>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat">
+            <span class="stat-value" id="statStreak">0</span>
+            <span class="stat-label">streak</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="statBest">0</span>
+            <span class="stat-label">best</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="statAvg">0%</span>
+            <span class="stat-label">avg</span>
+          </div>
+        </div>
+      </div>
+
+      <section class="log-panel" aria-label="Habit grid">
+        <div class="log-scroll">
+          <div class="log-grid" id="logGrid">
+            <!-- rendered by JS -->
+          </div>
+          <div class="empty-state" id="emptyState" hidden>
+            <p>No habits logged yet.</p>
+            <p class="empty-sub">Add your first one below to start the record.</p>
+          </div>
+        </div>
+        <button class="add-habit-btn" id="addHabitBtn">
+          <span class="plus">+</span> Add habit
+        </button>
+      </section>
+
+      <section class="chart-panel" id="chartPanel" style="--chart-h: 260px;">
+        <div class="resize-handle" id="resizeHandle" aria-hidden="true"></div>
+        <div class="chart-head">
+          <h2>Consistency</h2>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="chart-body">
+          <svg id="chartSvg" preserveAspectRatio="none"></svg>
+          <div class="chart-tooltip" id="chartTooltip" hidden></div>
+        </div>
+      </section>
+
+    </section>
+
+    <!-- ================= JOURNAL ================= -->
+    <section class="page" id="page-journal" data-page="journal" hidden>
+      <div class="page-head">
+        <h2>Journal</h2>
+        <div class="journal-day-nav">
+          <button class="nav-btn" id="journalPrevDay" aria-label="Previous day">‹</button>
+          <span class="journal-date-label" id="journalDateLabel"></span>
+          <button class="nav-btn" id="journalNextDay" aria-label="Next day">›</button>
+        </div>
+      </div>
+
+      <div class="journal-panel">
+        <textarea id="journalTextarea" class="journal-textarea" maxlength="4000" placeholder="Write about your day… (optional, saved automatically)"></textarea>
+        <span class="saved-hint" id="journalSavedHint" hidden>Saved</span>
+      </div>
+
+      <div class="journal-history">
+        <h3>Past entries</h3>
+        <div class="journal-list" id="journalList"></div>
+      </div>
+    </section>
+
+    <!-- ================= INSIGHTS ================= -->
+    <section class="page" id="page-insights" data-page="insights" hidden>
+      <div class="page-head">
+        <h2>Insights</h2>
+      </div>
+
+      <div class="insights-stats-row">
+        <div class="stat-card">
+          <span class="stat-value" id="insCurrentStreak">0</span>
+          <span class="stat-label">current streak</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="insBestStreak">0</span>
+          <span class="stat-label">best streak</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="insMonthAvg">0%</span>
+          <span class="stat-label">month avg</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="insHabitCount">0</span>
+          <span class="stat-label">habits tracked</span>
+        </div>
+      </div>
+
+      <div class="insights-table-wrap">
+        <table class="insights-table" id="insightsTable" hidden>
+          <thead>
+            <tr><th>Habit</th><th>This month</th><th>Streak</th><th>Best</th></tr>
+          </thead>
+          <tbody id="insightsTableBody"></tbody>
+        </table>
+        <p class="empty-state" id="insightsEmpty" hidden>Add a habit on the Today tab to see insights here.</p>
+      </div>
+    </section>
+
+    <!-- ================= SETTINGS ================= -->
+    <section class="page" id="page-settings" data-page="settings" hidden>
+      <div class="page-head">
+        <h2>Settings</h2>
+      </div>
+
+      <div class="settings-block">
+        <h3>Profiles</h3>
+        <p class="settings-note">Local profiles are saved on this device only — no password, no server.</p>
+        <div class="profile-list" id="profileList"></div>
+        <button class="ghost-btn" id="addProfileBtn">+ New profile</button>
+      </div>
+
+      <div class="settings-block">
+        <h3>Install as app</h3>
+        <p class="settings-note" id="installStatusText">Install Discipline Log to your home screen to open it like a native app, offline.</p>
+        <button class="ghost-btn" id="installBtn" hidden>Install app</button>
+        <p class="settings-note ios-hint" id="installIOSHint" hidden>On iPhone/iPad: tap the Share icon in Safari, then "Add to Home Screen".</p>
+      </div>
+
+      <div class="settings-block">
+        <h3>Chart</h3>
+        <button class="ghost-btn" id="resetChartHeightBtn">Reset chart height</button>
+      </div>
+
+      <div class="settings-block danger">
+        <h3>Danger zone</h3>
+        <button class="danger-btn" id="clearProfileDataBtn">Clear all data for this profile</button>
+      </div>
+    </section>
+
+    <!-- ================= EXPORT / BACKUP ================= -->
+    <section class="page" id="page-export" data-page="export" hidden>
+      <div class="page-head">
+        <h2>Export / Backup</h2>
+      </div>
+      <div class="settings-block">
+        <h3>Download a backup</h3>
+        <p class="settings-note">Saves habits, log history, notes, and journal entries for this profile as a .json file.</p>
+        <button class="ghost-btn" id="exportBtn">Download backup (.json)</button>
+      </div>
+      <div class="settings-block">
+        <h3>Restore from a backup</h3>
+        <p class="settings-note">Replaces this profile's current data with the contents of a backup file.</p>
+        <label class="ghost-btn file-label" for="importFile">Choose backup file…</label>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+      <span class="saved-hint" id="exportHint" hidden></span>
+    </section>
+
+  </main>
+</div>
+
+<!-- profile creation modal -->
+<div class="modal-overlay" id="profileModalOverlay" hidden>
+  <div class="modal">
+    <h2 id="profileModalTitle">Welcome</h2>
+    <p id="profileModalSub">Enter a name for your local profile. It's saved on this device only.</p>
+    <input type="text" id="newProfileNameInput" maxlength="24" placeholder="Your name" autocomplete="off" spellcheck="false">
+    <div class="modal-actions">
+      <button class="cancel-add-profile" id="cancelProfileBtn" hidden>Cancel</button>
+      <button class="confirm-add-profile" id="createProfileBtn">Start</button>
+    </div>
+  </div>
+</div>
+
+<template id="rowTemplate">
+  <div class="habit-row-wrap">
+    <div class="habit-row" draggable="false">
+      <div class="habit-name-cell">
+        <span class="habit-dot"></span>
+        <input class="habit-name-input" type="text" maxlength="40" spellcheck="false">
+        <button class="habit-comment-btn" title="Optional note" aria-label="Toggle note">💬</button>
+        <button class="habit-delete" title="Remove habit" aria-label="Remove habit">×</button>
+      </div>
+      <div class="habit-days"></div>
+    </div>
+    <div class="habit-note" hidden>
+      <textarea class="habit-note-input" maxlength="500" placeholder="Optional note about this habit…"></textarea>
+    </div>
+  </div>
+</template>
+
+<template id="addFormTemplate">
+  <div class="add-habit-form">
+    <div class="color-picker" id="colorPicker"></div>
+    <input class="new-habit-input" type="text" maxlength="40" placeholder="Name this habit…" spellcheck="false" autocomplete="off">
+    <button class="confirm-add" aria-label="Confirm">✓</button>
+    <button class="cancel-add" aria-label="Cancel">×</button>
+  </div>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

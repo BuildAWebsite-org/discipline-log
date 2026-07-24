@@ -4,7 +4,6 @@
   /* ============================================================
      Constants
      ============================================================ */
-  const STORAGE_KEY = "disciplineLog.v1";
   const COLORS = ["#ffab3d","#4fd1c5","#818cf8","#f472b6","#4ade80","#fb923c","#60a5fa","#facc15","#f87171","#a78bfa"];
   const MONTH_NAMES = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   const DAY_LETTERS = ["S","M","T","W","T","F","S"];
@@ -12,21 +11,68 @@
   const MIN_CHART_H = 150;
   const MAX_CHART_H = 520;
 
+  const PROFILES_KEY = "disciplineLog.profiles.v1";
+  const ACTIVE_PROFILE_KEY = "disciplineLog.activeProfile.v1";
+  const stateKeyFor = (id) => `disciplineLog.v1.${id}`;
+
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   /* ============================================================
-     State
+     Date helpers
      ============================================================ */
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  let state = loadState();
+  function pad(n){ return String(n).padStart(2,"0"); }
+  function keyFor(y,m,d){ return `${y}-${pad(m+1)}-${pad(d)}`; }
+  function keyForDate(dt){ return keyFor(dt.getFullYear(), dt.getMonth(), dt.getDate()); }
+  function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+  function isToday(y,m,d){ return y===today.getFullYear() && m===today.getMonth() && d===today.getDate(); }
+  function isFuture(y,m,d){ return new Date(y,m,d) > today; }
+  function addDays(dt, n){ const d = new Date(dt); d.setDate(d.getDate()+n); return d; }
+  function escapeHtml(s){
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  /* ============================================================
+     Profiles (local, device-only — no password / no server)
+     ============================================================ */
+  function loadProfiles(){
+    try{
+      const raw = localStorage.getItem(PROFILES_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+  }
+  function saveProfiles(list){
+    try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); }catch(e){ console.warn("Could not save profiles.", e); }
+  }
+  function getActiveProfileId(){
+    try{ return localStorage.getItem(ACTIVE_PROFILE_KEY); }catch(e){ return null; }
+  }
+  function setActiveProfileId(id){
+    try{ localStorage.setItem(ACTIVE_PROFILE_KEY, id); }catch(e){}
+  }
+
+  let profiles = loadProfiles();
+  let activeProfileId = getActiveProfileId();
+  if(!activeProfileId || !profiles.find(p => p.id === activeProfileId)){
+    activeProfileId = profiles[0] ? profiles[0].id : null;
+  }
+  let STORAGE_KEY = activeProfileId ? stateKeyFor(activeProfileId) : null;
+
+  /* ============================================================
+     State
+     ============================================================ */
+  let state = null;
 
   function defaultState(){
     return {
-      habits: [],              // {id, name, color, createdAt: 'YYYY-MM-DD'}
+      habits: [],              // {id, name, color, note, createdAt: 'YYYY-MM-DD'}
       completions: {},         // { habitId: { 'YYYY-MM-DD': true } }
+      journal: {},             // { 'YYYY-MM-DD': "text" }
       viewYear: today.getFullYear(),
       viewMonth: today.getMonth(),
       chartH: 260,
@@ -36,7 +82,7 @@
 
   function loadState(){
     try{
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = STORAGE_KEY ? localStorage.getItem(STORAGE_KEY) : null;
       if(!raw) return defaultState();
       const parsed = JSON.parse(raw);
       return Object.assign(defaultState(), parsed);
@@ -48,22 +94,11 @@
 
   function saveState(){
     try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if(STORAGE_KEY) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }catch(e){
       console.warn("Could not save data.", e);
     }
   }
-
-  /* ============================================================
-     Date helpers
-     ============================================================ */
-  function pad(n){ return String(n).padStart(2,"0"); }
-  function keyFor(y,m,d){ return `${y}-${pad(m+1)}-${pad(d)}`; }
-  function keyForDate(dt){ return keyFor(dt.getFullYear(), dt.getMonth(), dt.getDate()); }
-  function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function isToday(y,m,d){ return y===today.getFullYear() && m===today.getMonth() && d===today.getDate(); }
-  function isFuture(y,m,d){ return new Date(y,m,d) > today; }
-  function addDays(dt, n){ const d = new Date(dt); d.setDate(d.getDate()+n); return d; }
 
   /* ============================================================
      Habit CRUD
@@ -76,7 +111,7 @@
 
   function addHabit(name, color){
     const id = "h_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    state.habits.push({ id, name: name.trim() || "Untitled habit", color, createdAt: keyForDate(today) });
+    state.habits.push({ id, name: name.trim() || "Untitled habit", color, note: "", createdAt: keyForDate(today) });
     state.completions[id] = {};
     state.chartVisible[id] = true;
     saveState();
@@ -104,7 +139,7 @@
   }
 
   /* ============================================================
-     Rendering — header + grid
+     Rendering — header + grid (Today page)
      ============================================================ */
   function render(){
     renderTopbar();
@@ -126,7 +161,6 @@
     const y = state.viewYear, m = state.viewMonth;
     const dim = daysInMonth(y,m);
 
-    // day header row
     const header = document.createElement("div");
     header.className = "day-header";
     const spacer = document.createElement("div");
@@ -146,8 +180,10 @@
 
     const rowTpl = $("#rowTemplate");
     state.habits.forEach(habit => {
-      const row = rowTpl.content.firstElementChild.cloneNode(true);
-      row.dataset.id = habit.id;
+      const wrap = rowTpl.content.firstElementChild.cloneNode(true);
+      wrap.dataset.id = habit.id;
+
+      const row = $(".habit-row", wrap);
       row.style.setProperty("--habit-color", habit.color);
 
       const dot = $(".habit-dot", row);
@@ -160,6 +196,25 @@
       input.addEventListener("keydown", e => { if(e.key==="Enter") input.blur(); });
 
       $(".habit-delete", row).addEventListener("click", () => deleteHabit(habit.id));
+
+      const noteWrap = $(".habit-note", wrap);
+      const noteInput = $(".habit-note-input", noteWrap);
+      const commentBtn = $(".habit-comment-btn", row);
+      noteInput.value = habit.note || "";
+      commentBtn.classList.toggle("has-note", !!(habit.note && habit.note.trim()));
+      commentBtn.addEventListener("click", () => {
+        noteWrap.hidden = !noteWrap.hidden;
+        if(!noteWrap.hidden) requestAnimationFrame(() => noteInput.focus());
+      });
+      let noteTimer;
+      noteInput.addEventListener("input", () => {
+        clearTimeout(noteTimer);
+        noteTimer = setTimeout(() => {
+          habit.note = noteInput.value;
+          saveState();
+          commentBtn.classList.toggle("has-note", !!(habit.note && habit.note.trim()));
+        }, 400);
+      });
 
       const daysWrap = $(".habit-days", row);
       for(let d=1; d<=dim; d++){
@@ -183,7 +238,7 @@
         cellWrap.appendChild(btn);
         daysWrap.appendChild(cellWrap);
       }
-      grid.appendChild(row);
+      grid.appendChild(wrap);
     });
   }
 
@@ -246,11 +301,8 @@
     return set;
   }
 
-  function computeStreaks(){
-    const set = successDateSet();
+  function streaksFromSet(set){
     if(set.size === 0) return { current: 0, best: 0 };
-
-    // current streak: walk back from today (allow today to be un-checked so far)
     let cursor = new Date(today);
     if(!set.has(keyForDate(cursor))) cursor = addDays(cursor, -1);
     let current = 0;
@@ -258,8 +310,6 @@
       current++;
       cursor = addDays(cursor, -1);
     }
-
-    // best streak: scan all dates present, sorted
     const dates = Array.from(set).sort();
     let best = 0, run = 0, prev = null;
     dates.forEach(dk => {
@@ -270,17 +320,29 @@
       best = Math.max(best, run);
       prev = dt;
     });
-
     return { current, best };
+  }
+
+  function computeStreaks(){
+    return streaksFromSet(successDateSet());
+  }
+
+  function computeHabitStreak(habitId){
+    const bucket = state.completions[habitId] || {};
+    const set = new Set(Object.keys(bucket).filter(dk => bucket[dk]));
+    return streaksFromSet(set);
+  }
+
+  function monthBounds(y, m){
+    const dim = daysInMonth(y,m);
+    if(y > today.getFullYear() || (y===today.getFullYear() && m > today.getMonth())) return 0;
+    return (y===today.getFullYear() && m===today.getMonth()) ? today.getDate() : dim;
   }
 
   function computeMonthAverage(){
     const y = state.viewYear, m = state.viewMonth;
     if(state.habits.length === 0) return 0;
-    const dim = daysInMonth(y,m);
-    const lastDay = (y===today.getFullYear() && m===today.getMonth()) ? today.getDate() : dim;
-    if(y > today.getFullYear() || (y===today.getFullYear() && m > today.getMonth())) return 0;
-
+    const lastDay = monthBounds(y,m);
     let possible = 0, done = 0;
     for(let d=1; d<=lastDay; d++){
       const dateKey = keyFor(y,m,d);
@@ -289,6 +351,21 @@
         possible++;
         if(state.completions[h.id] && state.completions[h.id][dateKey]) done++;
       });
+    }
+    return possible === 0 ? 0 : Math.round((done/possible)*100);
+  }
+
+  function computeHabitMonthPct(habitId){
+    const y = state.viewYear, m = state.viewMonth;
+    const habit = state.habits.find(h => h.id === habitId);
+    if(!habit) return 0;
+    const lastDay = monthBounds(y,m);
+    let possible = 0, done = 0;
+    for(let d=1; d<=lastDay; d++){
+      const dk = keyFor(y,m,d);
+      if(habit.createdAt > dk) continue;
+      possible++;
+      if(state.completions[habitId] && state.completions[habitId][dk]) done++;
     }
     return possible === 0 ? 0 : Math.round((done/possible)*100);
   }
@@ -328,18 +405,9 @@
     });
   }
 
-  function escapeHtml(s){
-    const d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
-  // Build per-series rolling-average data for the viewed month
   function buildSeries(){
     const y = state.viewYear, m = state.viewMonth;
-    const dim = daysInMonth(y,m);
-    const lastDay = (y===today.getFullYear() && m===today.getMonth()) ? today.getDate()
-                    : (y>today.getFullYear() || (y===today.getFullYear()&&m>today.getMonth())) ? 0 : dim;
+    const lastDay = monthBounds(y,m);
 
     const dayKeys = [];
     for(let d=1; d<=lastDay; d++) dayKeys.push(keyFor(y,m,d));
@@ -398,13 +466,10 @@
     return d;
   }
 
-  let lastChartData = null;
-
   function renderChart(){
     const svg = $("#chartSvg");
     svg.innerHTML = "";
     const { dayKeys, series } = buildSeries();
-    lastChartData = { dayKeys, series };
 
     const box = svg.getBoundingClientRect();
     const W = Math.max(box.width, 100);
@@ -422,7 +487,6 @@
       return n;
     };
 
-    // gridlines + y labels
     [0,50,100].forEach(v => {
       const yy = padT + plotH - (v/100)*plotH;
       svg.appendChild(el("line", { x1: padL, x2: W-padR, y1: yy, y2: yy, stroke: "var(--line)", "stroke-width": 1, "stroke-dasharray": v===0?"0":"3 4" }));
@@ -441,14 +505,12 @@
     const xFor = i => padL + (i/(dayKeys.length-1)) * plotW;
     const yFor = v => padT + plotH - (v/100)*plotH;
 
-    // today marker
     const todayIdx = dayKeys.indexOf(keyForDate(today));
     if(todayIdx > -1){
       const tx = xFor(todayIdx);
       svg.appendChild(el("line", { x1: tx, x2: tx, y1: padT, y2: padT+plotH, stroke: "var(--line-strong)", "stroke-width": 1 }));
     }
 
-    // x labels: first, mid, last
     [0, Math.floor((dayKeys.length-1)/2), dayKeys.length-1].forEach(i => {
       const d = Number(dayKeys[i].split("-")[2]);
       const t = el("text", { x: xFor(i), y: H-4, fill: "var(--text-faint)", "font-size": 9, "text-anchor": "middle", "font-family": "var(--mono)" });
@@ -480,7 +542,6 @@
       svg.appendChild(el("circle", { cx: lastPt[0], cy: lastPt[1], r: id==="overall"?3.5:2.5, fill: s.color }));
     });
 
-    // hover layer
     const hitLine = el("line", { x1:0,x2:0,y1:padT,y2:padT+plotH, stroke:"var(--line-strong)", "stroke-width":1, opacity:0 });
     svg.appendChild(hitLine);
 
@@ -582,18 +643,398 @@
   }
 
   /* ============================================================
-     Init
+     Page navigation (Today / Journal / Insights / Settings / Export)
      ============================================================ */
-  function init(){
+  function showPage(page){
+    $$(".page").forEach(p => { p.hidden = p.dataset.page !== page; });
+    $$(".menu-item").forEach(b => b.classList.toggle("active", b.dataset.page === page));
+    closeMenu();
+    if(page === "journal") renderJournal();
+    if(page === "insights") renderInsights();
+    if(page === "settings") renderSettingsProfiles();
+  }
+
+  function openMenu(){
+    $("#dropdownMenu").hidden = false;
+    $("#menuBtn").setAttribute("aria-expanded", "true");
+    document.addEventListener("click", onOutsideMenuClick);
+  }
+  function closeMenu(){
+    $("#dropdownMenu").hidden = true;
+    $("#menuBtn").setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onOutsideMenuClick);
+  }
+  function onOutsideMenuClick(e){
+    const menu = $("#dropdownMenu"), btn = $("#menuBtn");
+    if(!menu.contains(e.target) && !btn.contains(e.target)) closeMenu();
+  }
+
+  /* ============================================================
+     Journal
+     ============================================================ */
+  let journalCursor = new Date(today);
+
+  function formatLongDate(d){
+    return d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric", year:"numeric" });
+  }
+
+  function renderJournal(){
+    const dk = keyForDate(journalCursor);
+    $("#journalDateLabel").textContent = formatLongDate(journalCursor);
+    $("#journalTextarea").value = (state.journal && state.journal[dk]) || "";
+    $("#journalSavedHint").hidden = true;
+    renderJournalList();
+  }
+
+  function shiftJournalDay(delta){
+    journalCursor = addDays(journalCursor, delta);
+    renderJournal();
+  }
+
+  let journalSaveTimer;
+  function onJournalInput(){
+    clearTimeout(journalSaveTimer);
+    $("#journalSavedHint").hidden = true;
+    journalSaveTimer = setTimeout(() => {
+      const dk = keyForDate(journalCursor);
+      const val = $("#journalTextarea").value;
+      if(!state.journal) state.journal = {};
+      if(val.trim()) state.journal[dk] = val;
+      else delete state.journal[dk];
+      saveState();
+      $("#journalSavedHint").hidden = false;
+      renderJournalList();
+    }, 500);
+  }
+
+  function renderJournalList(){
+    const list = $("#journalList");
+    list.innerHTML = "";
+    const entries = Object.keys(state.journal || {}).sort().reverse();
+    if(entries.length === 0){
+      list.innerHTML = `<p class="journal-empty">No entries yet.</p>`;
+      return;
+    }
+    const activeKey = keyForDate(journalCursor);
+    entries.forEach(dk => {
+      const text = state.journal[dk];
+      const row = document.createElement("button");
+      row.className = "journal-entry" + (dk === activeKey ? " active" : "");
+      const [y,m,d] = dk.split("-").map(Number);
+      const label = new Date(y,m-1,d).toLocaleDateString(undefined,{ month:"short", day:"numeric", year:"numeric" });
+      row.innerHTML = `<span class="je-date">${label}</span><span class="je-preview">${escapeHtml(text.slice(0,80))}</span>`;
+      row.addEventListener("click", () => { journalCursor = new Date(y,m-1,d); renderJournal(); });
+      list.appendChild(row);
+    });
+  }
+
+  /* ============================================================
+     Insights
+     ============================================================ */
+  function renderInsights(){
+    const { current, best } = computeStreaks();
+    $("#insCurrentStreak").textContent = current;
+    $("#insBestStreak").textContent = best;
+    $("#insMonthAvg").textContent = computeMonthAverage() + "%";
+    $("#insHabitCount").textContent = state.habits.length;
+
+    const tbody = $("#insightsTableBody");
+    tbody.innerHTML = "";
+    if(state.habits.length === 0){
+      $("#insightsEmpty").hidden = false;
+      $("#insightsTable").hidden = true;
+      return;
+    }
+    $("#insightsEmpty").hidden = true;
+    $("#insightsTable").hidden = false;
+    state.habits.forEach(h => {
+      const s = computeHabitStreak(h.id);
+      const pct = computeHabitMonthPct(h.id);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><span class="ins-dot" style="background:${h.color};color:${h.color}"></span>${escapeHtml(h.name)}</td>
+        <td>${pct}%</td>
+        <td>${s.current}</td>
+        <td>${s.best}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ============================================================
+     Settings — profiles, chart reset, clear data
+     ============================================================ */
+  function renderProfileBadge(){
+    const p = profiles.find(p => p.id === activeProfileId);
+    $("#profileName").textContent = p ? p.name : "—";
+  }
+
+  function renderSettingsProfiles(){
+    const wrap = $("#profileList");
+    wrap.innerHTML = "";
+    profiles.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "profile-row" + (p.id === activeProfileId ? " active" : "");
+      row.innerHTML = `
+        <span class="profile-row-name">${escapeHtml(p.name)}</span>
+        <span class="profile-row-actions">
+          ${p.id === activeProfileId ? '<span class="profile-current-tag">current</span>' : '<button class="profile-switch-btn">Switch</button>'}
+          <button class="profile-rename-btn" title="Rename">✎</button>
+          ${profiles.length > 1 ? '<button class="profile-delete-btn" title="Delete">×</button>' : ''}
+        </span>
+      `;
+      const switchBtn = $(".profile-switch-btn", row);
+      if(switchBtn) switchBtn.addEventListener("click", () => switchProfile(p.id));
+      $(".profile-rename-btn", row).addEventListener("click", () => renameProfile(p.id));
+      const delBtn = $(".profile-delete-btn", row);
+      if(delBtn) delBtn.addEventListener("click", () => deleteProfile(p.id));
+      wrap.appendChild(row);
+    });
+  }
+
+  function switchProfile(id){
+    if(id === activeProfileId) return;
+    activeProfileId = id;
+    setActiveProfileId(id);
+    STORAGE_KEY = stateKeyFor(id);
+    state = loadState();
+    renderProfileBadge();
+    render();
+    renderSettingsProfiles();
+    showPage("today");
+  }
+
+  function renameProfile(id){
+    const p = profiles.find(p => p.id === id);
+    if(!p) return;
+    const name = prompt("Rename profile", p.name);
+    if(name && name.trim()){
+      p.name = name.trim();
+      saveProfiles(profiles);
+      renderProfileBadge();
+      renderSettingsProfiles();
+    }
+  }
+
+  function deleteProfile(id){
+    if(profiles.length <= 1) return;
+    const p = profiles.find(p => p.id === id);
+    if(!p) return;
+    if(!confirm(`Delete profile "${p.name}"? This removes all its data from this device.`)) return;
+    try{ localStorage.removeItem(stateKeyFor(id)); }catch(e){}
+    profiles = profiles.filter(p => p.id !== id);
+    saveProfiles(profiles);
+    if(id === activeProfileId){
+      activeProfileId = profiles[0].id;
+      setActiveProfileId(activeProfileId);
+      STORAGE_KEY = stateKeyFor(activeProfileId);
+      state = loadState();
+      renderProfileBadge();
+      render();
+    }
+    renderSettingsProfiles();
+  }
+
+  /* ============================================================
+     Profile creation modal
+     ============================================================ */
+  let profileModalMode = "first";
+
+  function openProfileModal(mode){
+    profileModalMode = mode;
+    $("#profileModalTitle").textContent = mode === "first" ? "Welcome" : "New profile";
+    $("#profileModalSub").textContent = mode === "first"
+      ? "Enter a name for your local profile. It's saved on this device only."
+      : "This adds a separate local profile with its own habits and log.";
+    $("#cancelProfileBtn").hidden = mode === "first";
+    $("#newProfileNameInput").value = "";
+    $("#profileModalOverlay").hidden = false;
+    requestAnimationFrame(() => $("#newProfileNameInput").focus());
+  }
+  function closeProfileModal(){
+    $("#profileModalOverlay").hidden = true;
+  }
+
+  function handleCreateProfile(){
+    const input = $("#newProfileNameInput");
+    const name = input.value.trim();
+    if(!name){ input.focus(); return; }
+    const id = "p_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    profiles.push({ id, name });
+    saveProfiles(profiles);
+    const wasFirst = profileModalMode === "first";
+    activeProfileId = id;
+    setActiveProfileId(id);
+    STORAGE_KEY = stateKeyFor(id);
+    closeProfileModal();
+    if(wasFirst){
+      boot();
+    } else {
+      state = loadState();
+      renderProfileBadge();
+      render();
+      renderSettingsProfiles();
+      showPage("today");
+    }
+  }
+
+  /* ============================================================
+     Export / Backup
+     ============================================================ */
+  function flashExportHint(msg, isError){
+    const hint = $("#exportHint");
+    hint.textContent = msg;
+    hint.hidden = false;
+    hint.classList.toggle("error", !!isError);
+  }
+
+  function exportBackup(){
+    const p = profiles.find(p => p.id === activeProfileId);
+    const payload = {
+      app: "discipline-log",
+      version: 1,
+      profileName: p ? p.name : "profile",
+      exportedAt: new Date().toISOString(),
+      state
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeName = (p ? p.name : "backup").replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    a.href = url;
+    a.download = `discipline-log-${safeName}-${keyForDate(today)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    flashExportHint("Backup downloaded.");
+  }
+
+  function importBackup(file){
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const parsed = JSON.parse(reader.result);
+        const incoming = parsed && parsed.state ? parsed.state : parsed;
+        if(!incoming || typeof incoming !== "object" || !Array.isArray(incoming.habits)){
+          throw new Error("not a recognizable backup");
+        }
+        state = Object.assign(defaultState(), incoming);
+        saveState();
+        render();
+        flashExportHint("Data restored from backup.");
+      }catch(e){
+        flashExportHint("Couldn't read that file — is it a Discipline Log backup?", true);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  /* ============================================================
+     PWA install ("download" to home screen)
+     ============================================================ */
+  let deferredInstallPrompt = null;
+
+  function isStandalone(){
+    return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  }
+  function isIOS(){
+    return /iphone|ipad|ipod/i.test(navigator.userAgent);
+  }
+
+  function initInstallUI(){
+    if(isStandalone()){
+      $("#installStatusText").textContent = "This app is already installed and running standalone.";
+      return;
+    }
+    if(isIOS()){
+      $("#installIOSHint").hidden = false;
+    }
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      $("#installBtn").hidden = false;
+    });
+    $("#installBtn").addEventListener("click", async () => {
+      if(!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      $("#installBtn").hidden = true;
+    });
+    window.addEventListener("appinstalled", () => {
+      $("#installBtn").hidden = true;
+      $("#installStatusText").textContent = "Installed ✓ — open it from your home screen.";
+    });
+  }
+
+  function registerSW(){
+    if("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  }
+
+  /* ============================================================
+     Wiring + Init
+     ============================================================ */
+  function bindGlobalUI(){
     $("#prevMonth").addEventListener("click", () => shiftMonth(-1));
     $("#nextMonth").addEventListener("click", () => shiftMonth(1));
     $("#addHabitBtn").addEventListener("click", toggleAddForm);
 
-    initResize();
-    render();
+    $("#menuBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      $("#dropdownMenu").hidden ? openMenu() : closeMenu();
+    });
+    $$(".menu-item").forEach(btn => btn.addEventListener("click", () => showPage(btn.dataset.page)));
+    $("#profileBtn").addEventListener("click", () => showPage("settings"));
 
-    if("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
-      navigator.serviceWorker.register("sw.js").catch(() => {});
+    $("#journalPrevDay").addEventListener("click", () => shiftJournalDay(-1));
+    $("#journalNextDay").addEventListener("click", () => shiftJournalDay(1));
+    $("#journalTextarea").addEventListener("input", onJournalInput);
+
+    $("#addProfileBtn").addEventListener("click", () => openProfileModal("add"));
+    $("#createProfileBtn").addEventListener("click", handleCreateProfile);
+    $("#cancelProfileBtn").addEventListener("click", closeProfileModal);
+    $("#newProfileNameInput").addEventListener("keydown", e => { if(e.key === "Enter") handleCreateProfile(); });
+
+    $("#resetChartHeightBtn").addEventListener("click", () => {
+      state.chartH = 260;
+      saveState();
+      $("#chartPanel").style.setProperty("--chart-h", "260px");
+      renderChart();
+    });
+    $("#clearProfileDataBtn").addEventListener("click", () => {
+      if(!confirm("Clear all habits, logs, notes, and journal entries for this profile? This can't be undone.")) return;
+      state = defaultState();
+      saveState();
+      render();
+      renderSettingsProfiles();
+    });
+
+    $("#exportBtn").addEventListener("click", exportBackup);
+    $("#importFile").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if(f) importBackup(f);
+      e.target.value = "";
+    });
+  }
+
+  function boot(){
+    state = loadState();
+    renderProfileBadge();
+    render();
+    initResize();
+    initInstallUI();
+    registerSW();
+  }
+
+  function init(){
+    bindGlobalUI();
+    if(profiles.length === 0){
+      openProfileModal("first");
+    } else {
+      boot();
     }
   }
 

@@ -460,83 +460,35 @@ body{
 .chart-tooltip .tt-dot{ width:6px; height:6px; border-radius:50%; }
 
 /* ========================================================
-   Responsive
+   Menu dropdown
    ======================================================== */
-@media (max-width: 640px){
-  .app{ padding: 18px 12px 40px; gap:16px; }
-  .topbar{ gap:14px; }
-  .stats-row{ gap:14px; }
-  .habit-name-cell{ width:140px; min-width:140px; }
-  .day-header .name-spacer{ width:140px; min-width:140px; }
-}
-
-/* ========================================================
-   Topbar right: profile + menu
-   ======================================================== */
-.topbar-right{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  position:relative;
-}
-
-.profile-btn{
-  display:flex;
-  align-items:center;
-  gap:7px;
-  background: var(--panel);
-  border:1px solid var(--line);
-  color: var(--text-dim);
-  font-family: var(--sans);
-  font-size:12.5px;
-  font-weight:500;
-  padding: 7px 12px;
-  border-radius: 20px;
-  cursor:pointer;
-  transition: border-color .18s var(--ease), color .18s var(--ease);
-  max-width: 140px;
-}
-.profile-btn:hover{ border-color: var(--amber); color: var(--amber); }
-.profile-btn #profileName{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.profile-dot{
-  width:7px; height:7px;
-  border-radius:50%;
-  background: var(--teal);
-  flex-shrink:0;
-  box-shadow: 0 0 6px var(--teal);
-}
-
+.menu-wrap{ position:relative; }
 .menu-btn{
-  width:36px; height:36px;
+  width:32px; height:32px;
   border-radius: var(--radius-sm);
   border:1px solid var(--line);
   background: var(--panel);
+  color: var(--text-dim);
   cursor:pointer;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition: border-color .18s var(--ease);
-  flex-shrink:0;
+  font-size:16px;
+  transition: border-color .18s var(--ease), color .18s var(--ease);
 }
-.menu-btn:hover{ border-color: var(--amber); }
-.menu-bars{ display:flex; flex-direction:column; gap:4px; width:16px; }
-.menu-bars span{ display:block; height:2px; background: var(--text-dim); border-radius:1px; transition: background .15s; }
-.menu-btn:hover .menu-bars span{ background: var(--amber); }
+.menu-btn:hover, .menu-btn[aria-expanded="true"]{ border-color: var(--amber); color: var(--amber); }
 
-.dropdown-menu{
+.menu-dropdown{
   position:absolute;
   top: calc(100% + 8px);
   right:0;
-  min-width:190px;
+  min-width:150px;
   background: var(--panel-raised);
   border:1px solid var(--line-strong);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 32px rgba(0,0,0,.45);
   padding:6px;
+  z-index: 20;
   display:flex;
   flex-direction:column;
   gap:2px;
-  box-shadow: 0 14px 34px rgba(0,0,0,.5);
-  z-index:20;
   animation: menuIn .16s var(--ease);
 }
 @keyframes menuIn{ from{ opacity:0; transform: translateY(-6px);} to{ opacity:1; transform:none; } }
@@ -548,109 +500,113 @@ body{
   color: var(--text-dim);
   font-family: var(--sans);
   font-size:13px;
-  font-weight:500;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  border-radius: 4px;
   cursor:pointer;
-  transition: background .14s, color .14s;
+  transition: background .15s, color .15s;
 }
 .menu-item:hover{ background: var(--bg-grid-line); color: var(--text); }
-.menu-item.active{ color: var(--amber); background: var(--amber-soft); }
+.menu-item.active{ color: var(--amber); }
 
 /* ========================================================
-   Page shell (shared across tabs)
+   Habit comment button + popover
    ======================================================== */
-.page{ display:flex; flex-direction:column; gap:20px; }
-
-.page-toprow{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:16px;
-  flex-wrap:wrap;
+.habit-comment{
+  width:18px; height:18px;
+  border:none;
+  background:transparent;
+  color: var(--text-faint);
+  cursor:pointer;
+  font-size:12px;
+  opacity:0;
+  flex-shrink:0;
+  transition: opacity .15s, color .15s;
 }
+.habit-row:hover .habit-comment{ opacity:.7; }
+.habit-comment:hover{ opacity:1 !important; color: var(--teal); }
+.habit-comment.has-note{ opacity:1; color: var(--teal); }
 
-.page-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:16px;
-  flex-wrap:wrap;
-  border-bottom:1px solid var(--line);
-  padding-bottom:14px;
+.popover{
+  position:fixed;
+  width:220px;
+  background: var(--panel-raised);
+  border:1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 32px rgba(0,0,0,.5);
+  padding:10px;
+  z-index: 30;
+  animation: menuIn .16s var(--ease);
 }
-.page-head h2{
-  margin:0;
-  font-family: var(--mono);
-  font-size:14px;
-  letter-spacing:2px;
-  text-transform:uppercase;
+.popover-textarea{
+  width:100%;
+  min-height:70px;
+  resize: vertical;
+  background: var(--bg);
+  border:1px solid var(--line);
+  border-radius: var(--radius-sm);
   color: var(--text);
+  font-family: var(--sans);
+  font-size:12.5px;
+  padding:7px 8px;
 }
-
-.ghost-btn{
-  background: transparent;
-  border:1px dashed var(--line-strong);
+.popover-textarea:focus{ outline:none; border-color: var(--teal); }
+.popover-actions{ display:flex; justify-content:flex-end; gap:6px; margin-top:8px; }
+.popover-save, .popover-close{
+  border:1px solid var(--line);
+  background: var(--bg);
   color: var(--text-dim);
-  font-family: var(--sans);
-  font-size:12.5px;
-  font-weight:500;
-  padding: 9px 16px;
   border-radius: var(--radius-sm);
+  font-size:11.5px;
+  padding: 5px 10px;
   cursor:pointer;
-  transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
-  align-self:flex-start;
-  display:inline-block;
+  transition: border-color .15s, color .15s;
 }
-.ghost-btn:hover{ border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
-.file-label{ cursor:pointer; }
-
-.danger-btn{
-  background: transparent;
-  border:1px solid var(--danger);
-  color: var(--danger);
-  font-family: var(--sans);
-  font-size:12.5px;
-  font-weight:500;
-  padding: 9px 16px;
-  border-radius: var(--radius-sm);
-  cursor:pointer;
-  transition: background .18s var(--ease);
-}
-.danger-btn:hover{ background: rgba(255,107,107,.12); }
-
-.saved-hint{
-  font-family: var(--mono);
-  font-size:11px;
-  color: var(--teal);
-  letter-spacing:.5px;
-}
-.saved-hint.error{ color: var(--danger); }
+.popover-save:hover{ border-color: var(--teal); color: var(--teal); }
+.popover-close:hover{ border-color: var(--danger); color: var(--danger); }
 
 /* ========================================================
-   Journal
+   Secondary views (journal / insights / settings)
    ======================================================== */
-.journal-day-nav{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  font-family: var(--mono);
-}
-.journal-date-label{ font-size:13px; letter-spacing:1px; color: var(--text); min-width:170px; text-align:center; }
-
-.journal-panel{
+.view{ animation: rowIn .28s var(--ease); }
+.panel-block{
   background: var(--panel);
   border:1px solid var(--line);
   border-radius: var(--radius);
-  padding:16px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
+  padding: 20px 22px 26px;
 }
-.journal-textarea{
+.view-title{
+  margin: 0 0 16px;
+  font-family: var(--mono);
+  font-size:11px;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  color: var(--text-dim);
+}
+
+/* journal */
+.journal-nav{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+.journal-date{
+  font-family: var(--mono);
+  font-size:13px;
+  letter-spacing:1px;
+  min-width:150px;
+}
+.jump-today{
+  margin-left:auto;
+  background:transparent;
+  border:1px solid var(--line);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  font-size:11px;
+  padding:5px 10px;
+  cursor:pointer;
+  transition: border-color .15s, color .15s;
+}
+.jump-today:hover{ border-color: var(--amber); color: var(--amber); }
+
+.journal-entry{
   width:100%;
-  min-height:160px;
-  resize:vertical;
+  min-height:140px;
   background: var(--bg);
   border:1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -659,245 +615,103 @@ body{
   font-size:13.5px;
   line-height:1.6;
   padding:12px 14px;
+  resize: vertical;
 }
-.journal-textarea:focus{ outline:none; border-color: var(--amber); }
+.journal-entry:focus{ outline:none; border-color: var(--amber); }
 
+.journal-history{ margin-top:20px; }
 .journal-history h3{
-  margin: 0 0 10px;
-  font-family: var(--mono);
-  font-size:11px;
-  letter-spacing:2px;
-  text-transform:uppercase;
-  color: var(--text-dim);
-}
-.journal-list{ display:flex; flex-direction:column; gap:6px; max-height:340px; overflow-y:auto; }
-.journal-entry{
-  display:flex;
-  gap:14px;
-  align-items:baseline;
-  text-align:left;
-  width:100%;
-  background: var(--panel);
-  border:1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding:10px 12px;
-  cursor:pointer;
-  transition: border-color .15s, background .15s;
-}
-.journal-entry:hover{ border-color: var(--line-strong); }
-.journal-entry.active{ border-color: var(--amber); background: var(--amber-soft); }
-.je-date{ font-family: var(--mono); font-size:11px; color: var(--text-faint); flex-shrink:0; }
-.je-preview{ font-size:12.5px; color: var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.journal-empty{ color: var(--text-faint); font-size:13px; padding:14px 4px; }
-
-/* ========================================================
-   Insights
-   ======================================================== */
-.insights-stats-row{ display:flex; gap:14px; flex-wrap:wrap; }
-.stat-card{
-  flex:1;
-  min-width:120px;
-  background: var(--panel);
-  border:1px solid var(--line);
-  border-radius: var(--radius);
-  padding:16px;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
-.stat-card .stat-value{ font-family:var(--mono); font-size:22px; font-weight:600; color: var(--amber); }
-.stat-card .stat-label{ font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color: var(--text-faint); }
-
-.insights-table-wrap{
-  background: var(--panel);
-  border:1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 6px 4px;
-  overflow-x:auto;
-}
-.insights-table{ width:100%; border-collapse:collapse; font-size:13px; }
-.insights-table th{
-  text-align:left;
-  font-family: var(--mono);
+  margin:0 0 8px;
   font-size:10px;
   letter-spacing:1.5px;
   text-transform:uppercase;
   color: var(--text-faint);
-  padding: 10px 14px;
-  border-bottom:1px solid var(--line);
 }
-.insights-table td{ padding: 10px 14px; border-top:1px solid var(--bg-grid-line); color: var(--text); }
-.insights-table tr:first-child td{ border-top:none; }
-.ins-dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; box-shadow: 0 0 6px 1px currentColor; }
-
-/* ========================================================
-   Settings
-   ======================================================== */
-.settings-block{
-  background: var(--panel);
-  border:1px solid var(--line);
-  border-radius: var(--radius);
-  padding:18px 20px;
+.journal-history-list{ display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto; }
+.journal-history-item{
   display:flex;
-  flex-direction:column;
   gap:10px;
+  align-items:baseline;
+  padding:7px 9px;
+  border-radius: var(--radius-sm);
+  cursor:pointer;
+  transition: background .15s;
 }
-.settings-block h3{
-  margin:0;
+.journal-history-item:hover{ background: var(--bg-grid-line); }
+.journal-history-item .jh-date{ font-family: var(--mono); font-size:10.5px; color: var(--amber); flex-shrink:0; }
+.journal-history-item .jh-preview{ font-size:12px; color: var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.journal-empty{ font-size:12px; color: var(--text-faint); padding:6px 2px; }
+
+/* insights */
+.insight-summary{ display:flex; gap:26px; margin-bottom:22px; flex-wrap:wrap; }
+.insight-summary .stat-value{ font-size:22px; }
+
+.insight-row{ display:flex; align-items:center; gap:12px; padding:9px 0; border-top:1px solid var(--bg-grid-line); }
+.insight-row:first-child{ border-top:none; }
+.insight-name{ width:150px; flex-shrink:0; font-size:12.5px; }
+.insight-bar-track{ flex:1; height:6px; background: var(--bg); border-radius:3px; overflow:hidden; }
+.insight-bar-fill{ height:100%; border-radius:3px; transition: width .4s var(--ease); }
+.insight-pct{ width:70px; text-align:right; font-family: var(--mono); font-size:11.5px; color: var(--text-dim); flex-shrink:0; }
+.insight-empty{ color: var(--text-faint); font-size:12.5px; }
+
+/* settings */
+.settings-group{ margin-bottom:24px; }
+.settings-group h3{ margin:0 0 6px; font-size:12.5px; color: var(--text); }
+.settings-note{ margin:0 0 12px; font-size:12px; color: var(--text-faint); line-height:1.6; max-width:520px; }
+.settings-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+.saved-label{
   font-family: var(--mono);
-  font-size:11.5px;
-  letter-spacing:1.5px;
-  text-transform:uppercase;
-  color: var(--text-dim);
+  font-size:11px;
+  color: var(--teal);
+  margin: -6px 0 12px;
 }
-.settings-note{ margin:0; font-size:12.5px; color: var(--text-faint); line-height:1.5; }
-.settings-block.danger{ border-color: rgba(255,107,107,.35); }
-.ios-hint{ color: var(--teal); }
-
-.profile-list{ display:flex; flex-direction:column; gap:8px; }
-.profile-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
+.save-warning-banner{
+  position:sticky;
+  top:0;
+  z-index:100;
+  background: #3a1f1f;
+  border-bottom:1px solid var(--danger);
+  color: #ffd6d6;
+  font-size:12.5px;
+  padding:10px 20px;
+  text-align:center;
+}
+.settings-btn{
   background: var(--bg);
   border:1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 9px 12px;
-}
-.profile-row.active{ border-color: var(--amber); }
-.profile-row-name{ font-size:13px; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.profile-row-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
-.profile-current-tag{
-  font-family: var(--mono);
-  font-size:9.5px;
-  letter-spacing:1px;
-  text-transform:uppercase;
-  color: var(--amber);
-  padding: 3px 8px;
-  border:1px solid var(--amber-soft);
-  border-radius: 12px;
-}
-.profile-switch-btn, .profile-rename-btn, .profile-delete-btn{
-  background:transparent;
-  border:1px solid var(--line);
   color: var(--text-dim);
-  font-size:11.5px;
-  padding: 5px 9px;
   border-radius: var(--radius-sm);
+  font-family: var(--sans);
+  font-size:12.5px;
+  padding:9px 14px;
   cursor:pointer;
   transition: border-color .15s, color .15s;
 }
-.profile-switch-btn:hover{ border-color: var(--teal); color: var(--teal); }
-.profile-rename-btn:hover{ border-color: var(--amber); color: var(--amber); }
-.profile-delete-btn:hover{ border-color: var(--danger); color: var(--danger); }
+.settings-btn:hover{ border-color: var(--amber); color: var(--amber); }
+.settings-btn.danger:hover{ border-color: var(--danger); color: var(--danger); }
+.file-btn{ display:inline-flex; align-items:center; }
 
-/* ========================================================
-   Habit comment / note
-   ======================================================== */
-.habit-comment-btn{
-  width:18px; height:18px;
-  border:none;
-  background:transparent;
-  color: var(--text-faint);
-  cursor:pointer;
-  font-size:12px;
-  line-height:1;
-  opacity:.55;
-  flex-shrink:0;
-  transition: opacity .15s, transform .12s;
-  filter: grayscale(1);
-}
-.habit-row:hover .habit-comment-btn{ opacity:1; }
-.habit-comment-btn:hover{ transform: scale(1.15); }
-.habit-comment-btn.has-note{ opacity:1; filter:none; }
-
-.habit-note{
-  padding: 0 0 10px 198px;
-  animation: rowIn .2s var(--ease);
-}
-.habit-note-input{
-  width: 100%;
-  max-width: 480px;
-  min-height: 52px;
-  resize: vertical;
-  background: var(--bg);
-  border:1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size:12.5px;
-  padding: 8px 10px;
-}
-.habit-note-input:focus{ outline:none; border-color: var(--amber); }
-
-@media (max-width: 640px){
-  .habit-note{ padding-left: 12px; }
-  .profile-btn span:not(.profile-dot){ display:none; }
-  .journal-date-label{ min-width:auto; }
-}
-
-/* ========================================================
-   Modal (profile creation)
-   ======================================================== */
-.modal-overlay{
+.toast{
   position:fixed;
-  inset:0;
-  background: rgba(4,6,8,.72);
-  backdrop-filter: blur(3px);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  z-index:50;
-  padding:20px;
-}
-.modal{
-  width:100%;
-  max-width:340px;
+  bottom:24px; left:50%;
+  transform: translateX(-50%);
   background: var(--panel-raised);
-  border:1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding:24px;
-  animation: rise .3s var(--ease);
-}
-.modal h2{
-  margin:0 0 8px;
-  font-family: var(--mono);
-  font-size:15px;
-  letter-spacing:1.5px;
+  border:1px solid var(--teal);
   color: var(--text);
-}
-.modal p{ margin:0 0 16px; font-size:12.5px; color: var(--text-faint); line-height:1.5; }
-.modal input{
-  width:100%;
-  background: var(--bg);
-  border:1px solid var(--line);
+  padding:10px 16px;
   border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size:14px;
-  padding: 10px 12px;
-  margin-bottom:16px;
+  font-size:12.5px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  z-index:50;
 }
-.modal input:focus{ outline:none; border-color: var(--amber); }
-.modal-actions{ display:flex; justify-content:flex-end; gap:10px; }
-.confirm-add-profile{
-  background: var(--amber);
-  border:none;
-  color: #1a1206;
-  font-weight:600;
-  font-size:13px;
-  padding: 9px 18px;
-  border-radius: var(--radius-sm);
-  cursor:pointer;
+
+/* ========================================================
+   Responsive
+   ======================================================== */
+@media (max-width: 640px){
+  .app{ padding: 18px 12px 40px; gap:16px; }
+  .topbar{ gap:14px; }
+  .stats-row{ gap:14px; }
+  .habit-name-cell{ width:140px; min-width:140px; }
+  .day-header .name-spacer{ width:140px; min-width:140px; }
 }
-.cancel-add-profile{
-  background:transparent;
-  border:1px solid var(--line);
-  color: var(--text-dim);
-  font-size:13px;
-  padding: 9px 16px;
-  border-radius: var(--radius-sm);
-  cursor:pointer;
-}
-.cancel-add-profile:hover{ border-color: var(--danger); color: var(--danger); }

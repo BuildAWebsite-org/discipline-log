@@ -181,7 +181,7 @@ body{
   z-index: 3;
   padding: 6px 0 8px;
 }
-.day-header .name-spacer{ width:190px; min-width:190px; flex-shrink:0; }
+.day-header .name-spacer{ width:214px; min-width:214px; flex-shrink:0; }
 .day-header .day-num{
   width:26px; min-width:26px;
   text-align:center;
@@ -202,7 +202,7 @@ body{
 @keyframes rowIn{ from{ opacity:0; transform: translateX(-6px);} to{ opacity:1; transform:none; } }
 
 .habit-name-cell{
-  width:190px; min-width:190px;
+  width:214px; min-width:214px;
   display:flex;
   align-items:center;
   gap:8px;
@@ -212,6 +212,25 @@ body{
   background: var(--panel);
   z-index:2;
 }
+.reorder-btns{
+  display:flex;
+  flex-direction:column;
+  flex-shrink:0;
+}
+.reorder-up, .reorder-down{
+  width:14px; height:11px;
+  border:none;
+  background:transparent;
+  color: var(--text-faint);
+  cursor:pointer;
+  font-size:7px;
+  line-height:1;
+  padding:0;
+  display:flex; align-items:center; justify-content:center;
+  transition: color .15s;
+}
+.reorder-up:hover, .reorder-down:hover{ color: var(--amber); }
+.reorder-up:disabled, .reorder-down:disabled{ opacity:.25; cursor:default; color: var(--text-faint) !important; }
 .habit-dot{
   width:8px; height:8px;
   border-radius:50%;
@@ -281,6 +300,21 @@ body{
 }
 @keyframes pop{ 0%{ transform:scale(.55);} 60%{ transform:scale(1.22);} 100%{ transform:scale(1);} }
 
+.day-cell button.count-btn{
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight:600;
+  color: var(--text-dim);
+  display:flex; align-items:center; justify-content:center;
+}
+.day-cell button.count-btn.partial{
+  background: var(--habit-color, var(--amber));
+  border-color: var(--habit-color, var(--amber));
+  opacity: .4;
+  color: #0a0d11;
+}
+.day-cell button.count-btn.checked{ color: #0a0d11; }
+
 .empty-state{
   padding: 40px 20px;
   text-align:center;
@@ -316,7 +350,7 @@ body{
 /* add-habit inline form */
 .add-habit-form{
   display:flex;
-  align-items:center;
+  flex-direction:column;
   gap:10px;
   margin: 4px 16px 16px;
   padding: 10px 12px;
@@ -325,6 +359,7 @@ body{
   border-radius: var(--radius-sm);
   animation: rowIn .22s var(--ease);
 }
+.add-form-row{ display:flex; align-items:center; gap:10px; }
 .color-picker{ display:flex; gap:6px; flex-shrink:0; }
 .color-swatch{
   width:16px; height:16px;
@@ -361,6 +396,35 @@ body{
 }
 .confirm-add:hover{ border-color: var(--teal); color: var(--teal); }
 .cancel-add:hover{ border-color: var(--danger); color: var(--danger); }
+
+.count-mode-toggle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:11.5px;
+  color: var(--text-dim);
+  cursor:pointer;
+  user-select:none;
+}
+.count-mode-toggle input{ accent-color: var(--teal); width:14px; height:14px; }
+.count-target-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:11.5px;
+  color: var(--text-dim);
+}
+.count-target-input{
+  width:56px;
+  background: var(--bg);
+  border:1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size:12px;
+  padding:4px 6px;
+}
+.count-target-input:focus{ outline:none; border-color: var(--teal); }
 
 /* ========================================================
    Chart panel
@@ -708,12 +772,127 @@ body{
 }
 
 /* ========================================================
+   Quote strip
+   ======================================================== */
+.quote-strip{
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-dim);
+  text-align:center;
+  padding: 2px 12px 4px;
+  border-bottom: 1px solid var(--line);
+  min-height: 1em;
+}
+.quote-strip::before{ content: '"'; color: var(--amber); }
+.quote-strip::after{ content: '"'; color: var(--amber); }
+
+/* ========================================================
+   Goals view
+   ======================================================== */
+.goal-add-row{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:18px;
+}
+.goal-input{
+  flex:1;
+  min-width:180px;
+  background: var(--bg);
+  border:1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size:13px;
+  padding: 9px 12px;
+}
+.goal-input:focus{ outline:none; border-color: var(--amber); }
+.goal-date-input{
+  background: var(--bg);
+  border:1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size:12px;
+  padding: 8px 10px;
+  color-scheme: dark;
+}
+.goal-add-btn{ margin:0; }
+
+.goal-list{ display:flex; flex-direction:column; gap:2px; }
+.goal-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding: 10px 4px;
+  border-top:1px solid var(--bg-grid-line);
+  animation: rowIn .22s var(--ease);
+}
+.goal-item:first-child{ border-top:none; }
+.goal-check{
+  width:18px; height:18px;
+  border-radius:4px;
+  border:1px solid var(--line-strong);
+  background: var(--bg);
+  cursor:pointer;
+  flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px;
+  transition: background .15s, border-color .15s;
+}
+.goal-check.done{
+  background: var(--teal);
+  border-color: var(--teal);
+  color:#0a0d11;
+}
+.goal-text{
+  flex:1;
+  min-width:0;
+  background:transparent;
+  border:none;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size:13px;
+  padding:3px 2px;
+  border-radius: var(--radius-sm);
+}
+.goal-text:hover{ background: var(--bg-grid-line); }
+.goal-text:focus{ outline:1px solid var(--line-strong); background: var(--panel-raised); }
+.goal-item.done .goal-text{ color: var(--text-faint); text-decoration: line-through; }
+.goal-due{
+  font-family: var(--mono);
+  font-size:10.5px;
+  color: var(--text-faint);
+  flex-shrink:0;
+  white-space:nowrap;
+}
+.goal-delete{
+  width:18px; height:18px;
+  border:none;
+  background:transparent;
+  color: var(--text-faint);
+  cursor:pointer;
+  font-size:15px;
+  flex-shrink:0;
+  transition: color .15s;
+}
+.goal-delete:hover{ color: var(--danger); }
+.goal-empty{ color: var(--text-faint); font-size:12.5px; padding: 8px 2px; }
+
+/* ========================================================
    Responsive
    ======================================================== */
 @media (max-width: 640px){
   .app{ padding: 18px 12px 40px; gap:16px; }
   .topbar{ gap:14px; }
   .stats-row{ gap:14px; }
-  .habit-name-cell{ width:140px; min-width:140px; }
-  .day-header .name-spacer{ width:140px; min-width:140px; }
+  .habit-name-cell{ width:158px; min-width:158px; }
+  .day-header .name-spacer{ width:158px; min-width:158px; }
+
+  /* iOS Safari zooms the page in on focus if an input's font-size is under 16px */
+  .habit-name-input,
+  .new-habit-input,
+  .journal-entry,
+  .popover-textarea{ font-size: 16px; }
 }

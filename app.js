@@ -28,6 +28,7 @@
       habits: [],              // {id, name, color, createdAt: 'YYYY-MM-DD', comment: ''}
       completions: {},         // { habitId: { 'YYYY-MM-DD': true } }
       journal: {},              // { 'YYYY-MM-DD': 'text' }
+      goals: [],                // {id, text, done, dueDate, createdAt}
       viewYear: today.getFullYear(),
       viewMonth: today.getMonth(),
       currentView: "today",
@@ -124,9 +125,14 @@
     return free || COLORS[state.habits.length % COLORS.length];
   }
 
-  function addHabit(name, color){
+  function addHabit(name, color, mode, target){
     const id = "h_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    state.habits.push({ id, name: name.trim() || "Untitled habit", color, createdAt: keyForDate(today), comment: "" });
+    const habit = { id, name: name.trim() || "Untitled habit", color, createdAt: keyForDate(today), comment: "" };
+    if(mode === "count"){
+      habit.mode = "count";
+      habit.target = Math.max(1, Math.min(99, Number(target) || 1));
+    }
+    state.habits.push(habit);
     state.completions[id] = {};
     state.chartVisible[id] = true;
     saveState();
@@ -141,6 +147,15 @@
     render();
   }
 
+  function moveHabit(id, dir){
+    const i = state.habits.findIndex(h => h.id === id);
+    const j = i + dir;
+    if(i === -1 || j < 0 || j >= state.habits.length) return;
+    [state.habits[i], state.habits[j]] = [state.habits[j], state.habits[i]];
+    saveState();
+    renderGrid();
+  }
+
   function renameHabit(id, name){
     const h = state.habits.find(h => h.id === id);
     if(h){ h.name = name.trim() || h.name; saveState(); }
@@ -151,6 +166,38 @@
     if(bucket[dateKey]) delete bucket[dateKey];
     else bucket[dateKey] = true;
     saveState();
+  }
+
+  function incrementCount(habitId, dateKey){
+    const bucket = state.completions[habitId] || (state.completions[habitId] = {});
+    const current = bucket[dateKey] || 0;
+    const next = current >= 30 ? 0 : current + 1;
+    if(next === 0) delete bucket[dateKey];
+    else bucket[dateKey] = next;
+    saveState();
+    return next;
+  }
+
+  function resetCount(habitId, dateKey){
+    const bucket = state.completions[habitId] || (state.completions[habitId] = {});
+    delete bucket[dateKey];
+    saveState();
+  }
+
+  // Value (0-100) and pass/fail state for a single habit on a single day —
+  // handles both checkbox habits and count-target habits uniformly.
+  function dayValue(h, dateKey){
+    const raw = state.completions[h.id] && state.completions[h.id][dateKey];
+    if(h.mode === "count"){
+      const count = raw || 0;
+      const target = h.target || 1;
+      return Math.min(100, Math.round((count/target)*100));
+    }
+    return raw ? 100 : 0;
+  }
+
+  function dayDone(h, dateKey){
+    return dayValue(h, dateKey) >= 100;
   }
 
   /* ============================================================
@@ -195,10 +242,17 @@
     $("#emptyState").hidden = state.habits.length > 0;
 
     const rowTpl = $("#rowTemplate");
-    state.habits.forEach(habit => {
+    state.habits.forEach((habit, idx) => {
       const row = rowTpl.content.firstElementChild.cloneNode(true);
       row.dataset.id = habit.id;
       row.style.setProperty("--habit-color", habit.color);
+
+      const upBtn = $(".reorder-up", row);
+      const downBtn = $(".reorder-down", row);
+      upBtn.disabled = idx === 0;
+      downBtn.disabled = idx === state.habits.length - 1;
+      upBtn.addEventListener("click", () => moveHabit(habit.id, -1));
+      downBtn.addEventListener("click", () => moveHabit(habit.id, 1));
 
       const dot = $(".habit-dot", row);
       dot.style.color = habit.color;
@@ -224,28 +278,74 @@
       });
 
       const daysWrap = $(".habit-days", row);
+      const isCount = habit.mode === "count";
       for(let d=1; d<=dim; d++){
         const dateKey = keyFor(y,m,d);
         const cellWrap = document.createElement("div");
         cellWrap.className = "day-cell";
         const btn = document.createElement("button");
         const future = isFuture(y,m,d);
-        const checked = !!(state.completions[habit.id] && state.completions[habit.id][dateKey]);
-        btn.className = (checked ? "checked " : "") + (future ? "future" : "");
         btn.style.setProperty("--habit-color", habit.color);
-        btn.setAttribute("aria-label", `${habit.name} — ${dateKey}`);
-        if(!future){
-          btn.addEventListener("click", () => {
-            toggleDay(habit.id, dateKey);
-            btn.classList.toggle("checked");
-            renderChart();
-            renderStats();
-          });
+
+        if(isCount){
+          const count = (state.completions[habit.id] && state.completions[habit.id][dateKey]) || 0;
+          const atTarget = count >= (habit.target || 1);
+          btn.className = "count-btn" + (atTarget ? " checked" : (count > 0 ? " partial" : "")) + (future ? " future" : "");
+          btn.textContent = count > 0 ? count : "";
+          btn.setAttribute("aria-label", `${habit.name} — ${dateKey}: ${count}/${habit.target || 1}`);
+          if(!future){
+            btn.addEventListener("click", () => {
+              const next = incrementCount(habit.id, dateKey);
+              const nowAtTarget = next >= (habit.target || 1);
+              btn.className = "count-btn" + (nowAtTarget ? " checked" : (next > 0 ? " partial" : ""));
+              btn.textContent = next > 0 ? next : "";
+              renderChart();
+              renderStats();
+            });
+            btn.addEventListener("dblclick", (e) => {
+              e.preventDefault();
+              resetCount(habit.id, dateKey);
+              btn.className = "count-btn";
+              btn.textContent = "";
+              renderChart();
+              renderStats();
+            });
+          }
+        } else {
+          const checked = !!(state.completions[habit.id] && state.completions[habit.id][dateKey]);
+          btn.className = (checked ? "checked " : "") + (future ? "future" : "");
+          btn.setAttribute("aria-label", `${habit.name} — ${dateKey}`);
+          if(!future){
+            btn.addEventListener("click", () => {
+              toggleDay(habit.id, dateKey);
+              btn.classList.toggle("checked");
+              renderChart();
+              renderStats();
+            });
+          }
         }
+
         cellWrap.appendChild(btn);
         daysWrap.appendChild(cellWrap);
       }
       grid.appendChild(row);
+    });
+
+    scrollToToday();
+  }
+
+  function scrollToToday(){
+    const y = state.viewYear, m = state.viewMonth;
+    if(y !== today.getFullYear() || m !== today.getMonth()) return;
+    requestAnimationFrame(() => {
+      const scrollEl = document.querySelector(".log-scroll");
+      const todayCell = document.querySelector(".day-header .day-num.today");
+      if(!scrollEl || !todayCell) return;
+      const scrollRect = scrollEl.getBoundingClientRect();
+      const cellRect = todayCell.getBoundingClientRect();
+      const offsetWithinContent = (cellRect.left - scrollRect.left) + scrollEl.scrollLeft;
+      const target = offsetWithinContent - (scrollEl.clientWidth / 2) + (cellRect.width / 2);
+      scrollEl.scrollLeft = Math.max(0, target);
     });
   }
 
@@ -275,10 +375,19 @@
     });
 
     const input = $(".new-habit-input", form);
+    const countCheckbox = $(".count-mode-checkbox", form);
+    const targetRow = $(".count-target-row", form);
+    const targetInput = $(".count-target-input", form);
+    countCheckbox.addEventListener("change", () => {
+      targetRow.hidden = !countCheckbox.checked;
+      if(countCheckbox.checked) requestAnimationFrame(() => targetInput.focus());
+    });
+
     const close = () => { form.remove(); formOpen = false; btn.hidden = false; };
     const commit = () => {
       if(input.value.trim()){
-        addHabit(input.value, selected);
+        const mode = countCheckbox.checked ? "count" : "check";
+        addHabit(input.value, selected, mode, targetInput.value);
       }
       close();
     };
@@ -300,11 +409,12 @@
      ============================================================ */
   function successDateSet(){
     const set = new Set();
-    for(const id in state.completions){
-      for(const dk in state.completions[id]){
-        if(state.completions[id][dk]) set.add(dk);
-      }
-    }
+    state.habits.forEach(h => {
+      const bucket = state.completions[h.id] || {};
+      Object.keys(bucket).forEach(dk => {
+        if(dayDone(h, dk)) set.add(dk);
+      });
+    });
     return set;
   }
 
@@ -336,6 +446,14 @@
     return { current, best };
   }
 
+  function habitEffectiveStart(h){
+    const bucket = state.completions[h.id] || {};
+    const loggedDates = Object.keys(bucket);
+    if(loggedDates.length === 0) return h.createdAt;
+    const earliestLogged = loggedDates.sort()[0];
+    return earliestLogged < h.createdAt ? earliestLogged : h.createdAt;
+  }
+
   function computeMonthAverage(){
     const y = state.viewYear, m = state.viewMonth;
     if(state.habits.length === 0) return 0;
@@ -343,16 +461,16 @@
     const lastDay = (y===today.getFullYear() && m===today.getMonth()) ? today.getDate() : dim;
     if(y > today.getFullYear() || (y===today.getFullYear() && m > today.getMonth())) return 0;
 
-    let possible = 0, done = 0;
+    let possible = 0, sum = 0;
     for(let d=1; d<=lastDay; d++){
       const dateKey = keyFor(y,m,d);
       state.habits.forEach(h => {
-        if(h.createdAt > dateKey) return;
+        if(habitEffectiveStart(h) > dateKey) return;
         possible++;
-        if(state.completions[h.id] && state.completions[h.id][dateKey]) done++;
+        sum += dayValue(h, dateKey);
       });
     }
-    return possible === 0 ? 0 : Math.round((done/possible)*100);
+    return possible === 0 ? 0 : Math.round(sum/possible);
   }
 
   function renderStats(){
@@ -409,14 +527,14 @@
     const rawPerHabit = {};
     state.habits.forEach(h => {
       rawPerHabit[h.id] = dayKeys.map(dk => {
-        if(h.createdAt > dk) return null;
-        return (state.completions[h.id] && state.completions[h.id][dk]) ? 100 : 0;
+        if(habitEffectiveStart(h) > dk) return null;
+        return dayValue(h, dk);
       });
     });
 
     const rawOverall = dayKeys.map((dk, i) => {
       const vals = state.habits
-        .filter(h => h.createdAt <= dk)
+        .filter(h => habitEffectiveStart(h) <= dk)
         .map(h => rawPerHabit[h.id][i])
         .filter(v => v !== null);
       if(vals.length === 0) return null;
@@ -681,6 +799,7 @@
     $$(".view").forEach(v => v.hidden = (v.id !== "view-" + view));
     $$(".menu-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
     if(view === "journal") renderJournal();
+    if(view === "goals") renderGoals();
     if(view === "insights") renderInsights();
     if(view === "settings") updateSavedLabel();
   }
@@ -809,22 +928,26 @@
     }
     const todayKey = keyForDate(today);
     state.habits.forEach(h => {
-      const bucket = state.completions[h.id] || {};
-      let possible = 0, done = 0;
-      const [cy,cm,cd] = h.createdAt.split("-").map(Number);
+      let possible = 0, sum = 0, doneDays = 0;
+      const [cy,cm,cd] = habitEffectiveStart(h).split("-").map(Number);
       let cursor = new Date(cy, cm-1, cd);
       while(keyForDate(cursor) <= todayKey){
+        const dk = keyForDate(cursor);
         possible++;
-        if(bucket[keyForDate(cursor)]) done++;
+        sum += dayValue(h, dk);
+        if(dayDone(h, dk)) doneDays++;
         cursor = addDays(cursor, 1);
       }
-      const pct = possible === 0 ? 0 : Math.round((done/possible)*100);
+      const pct = possible === 0 ? 0 : Math.round(sum/possible);
+      const detail = h.mode === "count"
+        ? `${doneDays}/${possible} at target · ${pct}%`
+        : `${doneDays}/${possible} · ${pct}%`;
       const row = document.createElement("div");
       row.className = "insight-row";
       row.innerHTML = `
         <span class="insight-name">${escapeHtml(h.name)}</span>
         <div class="insight-bar-track"><div class="insight-bar-fill" style="width:${pct}%; background:${h.color};"></div></div>
-        <span class="insight-pct">${done}/${possible} · ${pct}%</span>
+        <span class="insight-pct">${detail}</span>
       `;
       list.appendChild(row);
     });
@@ -891,6 +1014,111 @@
   }
 
   /* ============================================================
+     Daily quote
+     ============================================================ */
+  function dayOfYear(dt){
+    const start = new Date(dt.getFullYear(), 0, 0);
+    return Math.floor((dt - start) / 86400000);
+  }
+
+  function renderQuote(){
+    const el = $("#quoteStrip");
+    if(!el || typeof QUOTES === "undefined" || QUOTES.length === 0) return;
+    const idx = dayOfYear(today) % QUOTES.length;
+    el.textContent = QUOTES[idx];
+  }
+
+  /* ============================================================
+     Goals — freeform, not tied to the daily grid
+     ============================================================ */
+  function addGoal(text, dueDate){
+    const id = "g_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    state.goals.push({ id, text: text.trim(), done: false, dueDate: dueDate || "", createdAt: keyForDate(today) });
+    saveState();
+    renderGoals();
+  }
+
+  function toggleGoalDone(id){
+    const g = state.goals.find(g => g.id === id);
+    if(g){ g.done = !g.done; saveState(); renderGoals(); }
+  }
+
+  function renameGoal(id, text){
+    const g = state.goals.find(g => g.id === id);
+    if(g){ g.text = text.trim() || g.text; saveState(); }
+  }
+
+  function deleteGoal(id){
+    state.goals = state.goals.filter(g => g.id !== id);
+    saveState();
+    renderGoals();
+  }
+
+  function renderGoals(){
+    const list = $("#goalList");
+    if(!list) return;
+    list.innerHTML = "";
+    if(state.goals.length === 0){
+      list.innerHTML = `<div class="goal-empty">No goals yet — add something you're working toward.</div>`;
+      return;
+    }
+    const sorted = [...state.goals].sort((a,b) => (a.done === b.done) ? 0 : (a.done ? 1 : -1));
+    sorted.forEach(g => {
+      const item = document.createElement("div");
+      item.className = "goal-item" + (g.done ? " done" : "");
+
+      const check = document.createElement("button");
+      check.className = "goal-check" + (g.done ? " done" : "");
+      check.setAttribute("aria-label", g.done ? "Mark not done" : "Mark done");
+      check.textContent = g.done ? "✓" : "";
+      check.addEventListener("click", () => toggleGoalDone(g.id));
+      item.appendChild(check);
+
+      const text = document.createElement("input");
+      text.className = "goal-text";
+      text.type = "text";
+      text.maxLength = 120;
+      text.value = g.text;
+      text.spellcheck = false;
+      text.addEventListener("change", () => renameGoal(g.id, text.value));
+      text.addEventListener("keydown", e => { if(e.key === "Enter") text.blur(); });
+      item.appendChild(text);
+
+      if(g.dueDate){
+        const due = document.createElement("span");
+        due.className = "goal-due";
+        due.textContent = g.dueDate;
+        item.appendChild(due);
+      }
+
+      const del = document.createElement("button");
+      del.className = "goal-delete";
+      del.setAttribute("aria-label", "Delete goal");
+      del.textContent = "×";
+      del.addEventListener("click", () => deleteGoal(g.id));
+      item.appendChild(del);
+
+      list.appendChild(item);
+    });
+  }
+
+  function initGoals(){
+    const addBtn = $("#goalAddBtn");
+    const input = $("#goalInput");
+    const dateInput = $("#goalDateInput");
+    const commit = () => {
+      if(input.value.trim()){
+        addGoal(input.value, dateInput.value);
+        input.value = "";
+        dateInput.value = "";
+        input.focus();
+      }
+    };
+    addBtn.addEventListener("click", commit);
+    input.addEventListener("keydown", e => { if(e.key === "Enter") commit(); });
+  }
+
+  /* ============================================================
      Month navigation
      ============================================================ */
   function shiftMonth(delta){
@@ -917,8 +1145,10 @@
     initResize();
     initMenu();
     initJournal();
+    initGoals();
     initSettings();
     render();
+    renderQuote();
     switchView(state.currentView || "today");
     updateSavedLabel();
 

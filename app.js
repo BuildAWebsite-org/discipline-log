@@ -53,6 +53,7 @@
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       onSaveSuccess();
+      scheduleRemotePush();
     }catch(e){
       console.warn("Could not save data.", e);
       onSaveFailure();
@@ -801,7 +802,7 @@
     if(view === "journal") renderJournal();
     if(view === "goals") renderGoals();
     if(view === "insights") renderInsights();
-    if(view === "settings") updateSavedLabel();
+    if(view === "settings"){ updateSavedLabel(); renderAccountUI(); }
   }
 
   function initMenu(){
@@ -1119,6 +1120,146 @@
   }
 
   /* ============================================================
+     Account — Netlify Identity login + remote sync via Netlify Blobs
+     ============================================================ */
+  const STATE_ENDPOINT = "/.netlify/functions/state";
+  let lastSyncedAt = null;
+  let pushTimer = null;
+  let syncing = false;
+
+  function currentIdentityUser(){
+    return (window.netlifyIdentity && netlifyIdentity.currentUser()) || null;
+  }
+
+  async function authHeaders(){
+    const user = currentIdentityUser();
+    if(!user) return null;
+    try{
+      const token = await user.jwt();
+      return { "Authorization": "Bearer " + token, "Content-Type": "application/json" };
+    }catch(e){
+      console.warn("Could not get auth token.", e);
+      return null;
+    }
+  }
+
+  function scheduleRemotePush(){
+    if(!currentIdentityUser()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushRemoteState, 1500);
+  }
+
+  async function pushRemoteState(){
+    const headers = await authHeaders();
+    if(!headers) return;
+    syncing = true;
+    updateSyncedLabel();
+    try{
+      const res = await fetch(STATE_ENDPOINT, { method: "POST", headers, body: JSON.stringify(state) });
+      if(res.ok){ lastSyncedAt = new Date(); }
+    }catch(e){
+      console.warn("Remote sync push failed.", e);
+    }
+    syncing = false;
+    updateSyncedLabel();
+  }
+
+  async function pullRemoteState(){
+    const headers = await authHeaders();
+    if(!headers) return undefined;
+    try{
+      const res = await fetch(STATE_ENDPOINT, { method: "GET", headers });
+      if(!res.ok) return undefined;
+      const json = await res.json();
+      return json.data;
+    }catch(e){
+      console.warn("Remote sync pull failed.", e);
+      return undefined;
+    }
+  }
+
+  function updateSyncedLabel(){
+    const label = document.getElementById("syncedLabel");
+    if(!label) return;
+    const user = currentIdentityUser();
+    if(!user){ label.hidden = true; return; }
+    label.hidden = false;
+    if(syncing){ label.textContent = "Syncing…"; return; }
+    if(!lastSyncedAt){ label.textContent = "Not synced yet"; return; }
+    const hh = String(lastSyncedAt.getHours()).padStart(2,"0");
+    const mm = String(lastSyncedAt.getMinutes()).padStart(2,"0");
+    const ss = String(lastSyncedAt.getSeconds()).padStart(2,"0");
+    label.textContent = `Synced ${hh}:${mm}:${ss}`;
+  }
+
+  function renderAccountUI(){
+    const note = document.getElementById("accountNote");
+    const actions = document.getElementById("accountActions");
+    if(!note || !actions) return;
+    const user = currentIdentityUser();
+
+    if(user){
+      note.textContent = `Logged in as ${user.email}. This device syncs to your account automatically.`;
+      actions.innerHTML = "";
+      const logoutBtn = document.createElement("button");
+      logoutBtn.className = "settings-btn danger";
+      logoutBtn.id = "logoutBtn";
+      logoutBtn.textContent = "Log out";
+      logoutBtn.addEventListener("click", () => netlifyIdentity.logout());
+      actions.appendChild(logoutBtn);
+
+      const syncBtn = document.createElement("button");
+      syncBtn.className = "settings-btn";
+      syncBtn.textContent = "Sync now";
+      syncBtn.addEventListener("click", pushRemoteState);
+      actions.appendChild(syncBtn);
+    }else{
+      note.textContent = "Log in to access your habits from another device. Your data on this device stays put either way.";
+      actions.innerHTML = `<button class="settings-btn" id="loginBtn">Log in / Sign up</button>`;
+      document.getElementById("loginBtn").addEventListener("click", () => netlifyIdentity.open("login"));
+    }
+    updateSyncedLabel();
+  }
+
+  async function handleLogin(user){
+    netlifyIdentity.close();
+    showToast(`Logged in as ${user.email}`);
+    const remote = await pullRemoteState();
+    if(remote){
+      state = Object.assign(defaultState(), remote);
+      journalDate = keyForDate(today);
+      saveStateLocalOnly();
+      render();
+      renderJournal();
+      renderGoals();
+      renderInsights();
+      showToast("Synced data loaded from your account.");
+    }else{
+      // First login for this account — push what's on this device up as the baseline.
+      await pushRemoteState();
+      showToast("This device's data is now synced to your account.");
+    }
+    renderAccountUI();
+  }
+
+  function saveStateLocalOnly(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); onSaveSuccess(); }
+    catch(e){ onSaveFailure(); }
+  }
+
+  function initAccount(){
+    if(!window.netlifyIdentity){ return; }
+    netlifyIdentity.on("init", () => renderAccountUI());
+    netlifyIdentity.on("login", handleLogin);
+    netlifyIdentity.on("logout", () => {
+      showToast("Logged out — this device's data stays local.");
+      lastSyncedAt = null;
+      renderAccountUI();
+    });
+    netlifyIdentity.init();
+  }
+
+  /* ============================================================
      Month navigation
      ============================================================ */
   function shiftMonth(delta){
@@ -1147,6 +1288,7 @@
     initJournal();
     initGoals();
     initSettings();
+    initAccount();
     render();
     renderQuote();
     switchView(state.currentView || "today");

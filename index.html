@@ -155,8 +155,12 @@
       </div>
 
       <div class="settings-group">
-        <h3>Accounts</h3>
-        <p class="settings-note">Login and cross-device sync aren't set up yet — everything currently lives in this browser's storage.</p>
+        <h3>Account</h3>
+        <p class="settings-note" id="accountNote">Log in to access your habits from another device. Your data on this device stays put either way.</p>
+        <div class="settings-actions" id="accountActions">
+          <button class="settings-btn" id="loginBtn">Log in / Sign up</button>
+        </div>
+        <p class="saved-label" id="syncedLabel" hidden></p>
       </div>
 
       <div class="settings-group">
@@ -215,6 +219,7 @@
   </div>
 </template>
 
+<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <script src="quotes.js"></script>
 <script src="app.js"></script>
 </body>

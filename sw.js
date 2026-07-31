@@ -1,4 +1,4 @@
-const CACHE = "discipline-log-v3";
+const CACHE = "stat-log-v4";
 const ASSETS = ["./index.html","./style.css","./app.js","./quotes.js","./manifest.json","./icon.svg","./apple-touch-icon.png","./icon-192.png","./icon-512.png"];
 
 self.addEventListener("install", e => {

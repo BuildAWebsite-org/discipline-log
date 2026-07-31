@@ -4,13 +4,41 @@
   /* ============================================================
      Constants
      ============================================================ */
-  const STORAGE_KEY = "disciplineLog.v1";
+  const STORAGE_KEY = "disciplineLog.v1"; // kept as-is on purpose — renaming would orphan existing saved data
   const COLORS = ["#ffab3d","#4fd1c5","#818cf8","#f472b6","#4ade80","#fb923c","#60a5fa","#facc15","#f87171","#a78bfa"];
   const MONTH_NAMES = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   const DAY_LETTERS = ["S","M","T","W","T","F","S"];
   const ROLL_WINDOW = 7;
   const MIN_CHART_H = 150;
   const MAX_CHART_H = 520;
+
+  const CATEGORIES = [
+    { id:"discipline", label:"Discipline", color:"#ffab3d" },
+    { id:"focus", label:"Focus", color:"#4fd1c5" },
+    { id:"body", label:"Body", color:"#f472b6" },
+    { id:"craft", label:"Craft", color:"#818cf8" },
+    { id:"other", label:"Other", color:"#9aa5b1" }
+  ];
+
+  const TITLES = [
+    { min:1, max:2, title:"Novice" },
+    { min:3, max:5, title:"Consistent" },
+    { min:6, max:9, title:"Disciplined" },
+    { min:10, max:14, title:"Relentless" },
+    { min:15, max:9999, title:"Unbreakable" }
+  ];
+
+  const ACHIEVEMENTS = [
+    { key:"first_habit", title:"Started Tracking", test: ctx => ctx.habitCount >= 1 },
+    { key:"streak_3", title:"3-Day Streak", test: ctx => ctx.bestStreak >= 3 },
+    { key:"streak_7", title:"One Week Strong", test: ctx => ctx.bestStreak >= 7 },
+    { key:"streak_30", title:"One Month In", test: ctx => ctx.bestStreak >= 30 },
+    { key:"streak_100", title:"Unbreakable", test: ctx => ctx.bestStreak >= 100 },
+    { key:"checkins_50", title:"50 Check-ins", test: ctx => ctx.totalCheckins >= 50 },
+    { key:"checkins_100", title:"Century", test: ctx => ctx.totalCheckins >= 100 },
+    { key:"first_goal", title:"Goal Getter", test: ctx => ctx.goalsDone >= 1 },
+    { key:"five_goals", title:"Ambitious", test: ctx => ctx.goalsDone >= 5 }
+  ];
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -25,10 +53,14 @@
 
   function defaultState(){
     return {
-      habits: [],              // {id, name, color, createdAt: 'YYYY-MM-DD', comment: ''}
-      completions: {},         // { habitId: { 'YYYY-MM-DD': true } }
-      journal: {},              // { 'YYYY-MM-DD': 'text' }
-      goals: [],                // {id, text, done, dueDate, createdAt}
+      habits: [],               // {id, name, color, createdAt, comment, mode, target, category}
+      completions: {},          // { habitId: { 'YYYY-MM-DD': true|number } }
+      journal: {},               // { 'YYYY-MM-DD': 'text' }
+      goals: [],                 // {id, text, done, dueDate, completedAt, createdAt}
+      historyNotes: [],          // {id, text, date, createdAt}
+      achievements: [],          // {key, title, unlockedAt}
+      profile: { birthYear: null },
+      xp: 0,
       viewYear: today.getFullYear(),
       viewMonth: today.getMonth(),
       currentView: "today",
@@ -42,7 +74,9 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       if(!raw) return defaultState();
       const parsed = JSON.parse(raw);
-      return Object.assign(defaultState(), parsed);
+      const merged = Object.assign(defaultState(), parsed);
+      if(!merged.profile) merged.profile = { birthYear: null };
+      return merged;
     }catch(e){
       console.warn("Could not read saved data, starting fresh.", e);
       return defaultState();
@@ -66,11 +100,9 @@
     hideSaveBanner();
     updateSavedLabel();
   }
-
   function onSaveFailure(){
     showSaveBanner();
   }
-
   function updateSavedLabel(){
     const label = document.getElementById("lastSavedLabel");
     if(!label || !lastSavedAt) return;
@@ -79,7 +111,6 @@
     const ss = String(lastSavedAt.getSeconds()).padStart(2,"0");
     label.textContent = `Last saved ${hh}:${mm}:${ss}`;
   }
-
   function showSaveBanner(){
     let banner = document.getElementById("saveWarningBanner");
     if(!banner){
@@ -94,10 +125,9 @@
     const banner = document.getElementById("saveWarningBanner");
     if(banner) banner.remove();
   }
-
   function storageIsAvailable(){
     try{
-      const t = "__disciplinelog_test__";
+      const t = "__statlog_test__";
       localStorage.setItem(t, "1");
       localStorage.removeItem(t);
       return true;
@@ -126,9 +156,13 @@
     return free || COLORS[state.habits.length % COLORS.length];
   }
 
-  function addHabit(name, color, mode, target){
+  function addHabit(name, color, mode, target, category){
     const id = "h_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    const habit = { id, name: name.trim() || "Untitled habit", color, createdAt: keyForDate(today), comment: "" };
+    const habit = {
+      id, name: name.trim() || "Untitled habit", color,
+      createdAt: keyForDate(today), comment: "",
+      category: category || "other"
+    };
     if(mode === "count"){
       habit.mode = "count";
       habit.target = Math.max(1, Math.min(99, Number(target) || 1));
@@ -138,6 +172,7 @@
     state.chartVisible[id] = true;
     saveState();
     render();
+    checkAchievements();
   }
 
   function deleteHabit(id){
@@ -185,8 +220,6 @@
     saveState();
   }
 
-  // Value (0-100) and pass/fail state for a single habit on a single day —
-  // handles both checkbox habits and count-target habits uniformly.
   function dayValue(h, dateKey){
     const raw = state.completions[h.id] && state.completions[h.id][dateKey];
     if(h.mode === "count"){
@@ -201,6 +234,119 @@
     return dayValue(h, dateKey) >= 100;
   }
 
+  function habitEffectiveStart(h){
+    const bucket = state.completions[h.id] || {};
+    const loggedDates = Object.keys(bucket);
+    if(loggedDates.length === 0) return h.createdAt;
+    const earliestLogged = loggedDates.sort()[0];
+    return earliestLogged < h.createdAt ? earliestLogged : h.createdAt;
+  }
+
+  /* ============================================================
+     XP / Levels / Titles
+     ============================================================ */
+  function xpForLevel(n){ return 50 * n * (n-1); }
+  function levelForXp(xp){
+    let lvl = 1;
+    while(xpForLevel(lvl+1) <= xp) lvl++;
+    return lvl;
+  }
+  function xpProgress(xp){
+    const lvl = levelForXp(xp);
+    const cur = xpForLevel(lvl);
+    const next = xpForLevel(lvl+1);
+    const span = next - cur;
+    const into = xp - cur;
+    return { level: lvl, into, span, pct: span > 0 ? Math.round((into/span)*100) : 100 };
+  }
+  function titleForLevel(lvl){
+    const match = TITLES.find(t => lvl >= t.min && lvl <= t.max);
+    return (match || TITLES[TITLES.length-1]).title;
+  }
+  function addXP(amount){
+    state.xp = (state.xp || 0) + amount;
+    saveState();
+    renderLevelBadge();
+    if(document.getElementById("view-insights") && !document.getElementById("view-insights").hidden){
+      renderXpCard();
+    }
+  }
+
+  function setRingProgress(circleEl, radius, pct){
+    if(!circleEl) return;
+    const c = 2 * Math.PI * radius;
+    const clamped = Math.max(0, Math.min(100, pct));
+    circleEl.style.strokeDasharray = String(c);
+    circleEl.style.strokeDashoffset = String(c * (1 - clamped/100));
+  }
+
+  function renderDailyRing(){
+    const fill = $("#dailyRingFill");
+    if(!fill) return;
+    let pct = 0;
+    if(state.habits.length > 0){
+      const todayKey = keyForDate(today);
+      const active = state.habits.filter(h => habitEffectiveStart(h) <= todayKey);
+      if(active.length > 0){
+        const sum = active.reduce((acc,h) => acc + dayValue(h, todayKey), 0);
+        pct = Math.round(sum/active.length);
+      }
+    }
+    setRingProgress(fill, 17, pct);
+  }
+
+  function renderLevelBadge(){
+    const prog = xpProgress(state.xp || 0);
+    const numEl = $("#levelNum"), titleEl = $("#levelTitle");
+    if(numEl) numEl.textContent = "Lv " + prog.level;
+    if(titleEl) titleEl.textContent = titleForLevel(prog.level);
+    renderDailyRing();
+  }
+
+  function renderAgeRing(){
+    const wrap = $("#ageRingBg");
+    const fill = $("#ageRingFill");
+    if(!wrap || !fill) return;
+    if(!state.profile || !state.profile.birthYear){ wrap.hidden = true; return; }
+    wrap.hidden = false;
+    const age = today.getFullYear() - state.profile.birthYear;
+    setRingProgress(fill, 90, Math.max(0, age));
+  }
+
+  /* ============================================================
+     Achievements
+     ============================================================ */
+  function checkAchievements(){
+    const { best } = computeStreaks();
+    let totalCheckins = 0;
+    state.habits.forEach(h => {
+      const bucket = state.completions[h.id] || {};
+      Object.keys(bucket).forEach(dk => { if(dayDone(h, dk)) totalCheckins++; });
+    });
+    const ctx = {
+      habitCount: state.habits.length,
+      bestStreak: best,
+      totalCheckins,
+      goalsDone: state.goals.filter(g => g.done).length
+    };
+    const unlockedKeys = new Set(state.achievements.map(a => a.key));
+    const newly = [];
+    ACHIEVEMENTS.forEach(a => {
+      if(!unlockedKeys.has(a.key) && a.test(ctx)){
+        state.achievements.push({ key: a.key, title: a.title, unlockedAt: keyForDate(today) });
+        newly.push(a);
+      }
+    });
+    if(newly.length){
+      state.xp = (state.xp || 0) + 50 * newly.length;
+      saveState();
+      renderLevelBadge();
+      newly.forEach(a => showToast("Achievement unlocked: " + a.title));
+      const historyView = document.getElementById("view-history");
+      if(historyView && !historyView.hidden) renderHistory();
+    }
+  }
+
   /* ============================================================
      Rendering — header + grid
      ============================================================ */
@@ -210,6 +356,7 @@
     renderChart();
     renderLegend();
     renderStats();
+    renderLevelBadge();
   }
 
   function renderTopbar(){
@@ -224,7 +371,6 @@
     const y = state.viewYear, m = state.viewMonth;
     const dim = daysInMonth(y,m);
 
-    // day header row
     const header = document.createElement("div");
     header.className = "day-header";
     const spacer = document.createElement("div");
@@ -296,12 +442,15 @@
           btn.setAttribute("aria-label", `${habit.name} — ${dateKey}: ${count}/${habit.target || 1}`);
           if(!future){
             btn.addEventListener("click", () => {
+              const wasAtTarget = dayDone(habit, dateKey);
               const next = incrementCount(habit.id, dateKey);
               const nowAtTarget = next >= (habit.target || 1);
               btn.className = "count-btn" + (nowAtTarget ? " checked" : (next > 0 ? " partial" : ""));
               btn.textContent = next > 0 ? next : "";
+              if(!wasAtTarget && nowAtTarget) addXP(10);
               renderChart();
               renderStats();
+              checkAchievements();
             });
             btn.addEventListener("dblclick", (e) => {
               e.preventDefault();
@@ -318,10 +467,14 @@
           btn.setAttribute("aria-label", `${habit.name} — ${dateKey}`);
           if(!future){
             btn.addEventListener("click", () => {
+              const wasDone = dayDone(habit, dateKey);
               toggleDay(habit.id, dateKey);
+              const nowDone = dayDone(habit, dateKey);
               btn.classList.toggle("checked");
+              if(!wasDone && nowDone) addXP(10);
               renderChart();
               renderStats();
+              checkAchievements();
             });
           }
         }
@@ -376,6 +529,7 @@
     });
 
     const input = $(".new-habit-input", form);
+    const categorySelect = $(".category-select", form);
     const countCheckbox = $(".count-mode-checkbox", form);
     const targetRow = $(".count-target-row", form);
     const targetInput = $(".count-target-input", form);
@@ -388,7 +542,7 @@
     const commit = () => {
       if(input.value.trim()){
         const mode = countCheckbox.checked ? "count" : "check";
-        addHabit(input.value, selected, mode, targetInput.value);
+        addHabit(input.value, selected, mode, targetInput.value, categorySelect.value);
       }
       close();
     };
@@ -423,7 +577,6 @@
     const set = successDateSet();
     if(set.size === 0) return { current: 0, best: 0 };
 
-    // current streak: walk back from today (allow today to be un-checked so far)
     let cursor = new Date(today);
     if(!set.has(keyForDate(cursor))) cursor = addDays(cursor, -1);
     let current = 0;
@@ -432,7 +585,6 @@
       cursor = addDays(cursor, -1);
     }
 
-    // best streak: scan all dates present, sorted
     const dates = Array.from(set).sort();
     let best = 0, run = 0, prev = null;
     dates.forEach(dk => {
@@ -445,14 +597,6 @@
     });
 
     return { current, best };
-  }
-
-  function habitEffectiveStart(h){
-    const bucket = state.completions[h.id] || {};
-    const loggedDates = Object.keys(bucket);
-    if(loggedDates.length === 0) return h.createdAt;
-    const earliestLogged = loggedDates.sort()[0];
-    return earliestLogged < h.createdAt ? earliestLogged : h.createdAt;
   }
 
   function computeMonthAverage(){
@@ -479,6 +623,7 @@
     $("#statStreak").textContent = current;
     $("#statBest").textContent = best;
     $("#statAvg").textContent = computeMonthAverage() + "%";
+    renderDailyRing();
   }
 
   /* ============================================================
@@ -515,7 +660,6 @@
     return d.innerHTML;
   }
 
-  // Build per-series rolling-average data for the viewed month
   function buildSeries(){
     const y = state.viewYear, m = state.viewMonth;
     const dim = daysInMonth(y,m);
@@ -579,13 +723,10 @@
     return d;
   }
 
-  let lastChartData = null;
-
   function renderChart(){
     const svg = $("#chartSvg");
     svg.innerHTML = "";
     const { dayKeys, series } = buildSeries();
-    lastChartData = { dayKeys, series };
 
     const box = svg.getBoundingClientRect();
     const W = Math.max(box.width, 100);
@@ -603,7 +744,6 @@
       return n;
     };
 
-    // gridlines + y labels
     [0,50,100].forEach(v => {
       const yy = padT + plotH - (v/100)*plotH;
       svg.appendChild(el("line", { x1: padL, x2: W-padR, y1: yy, y2: yy, stroke: "var(--line)", "stroke-width": 1, "stroke-dasharray": v===0?"0":"3 4" }));
@@ -622,14 +762,12 @@
     const xFor = i => padL + (i/(dayKeys.length-1)) * plotW;
     const yFor = v => padT + plotH - (v/100)*plotH;
 
-    // today marker
     const todayIdx = dayKeys.indexOf(keyForDate(today));
     if(todayIdx > -1){
       const tx = xFor(todayIdx);
       svg.appendChild(el("line", { x1: tx, x2: tx, y1: padT, y2: padT+plotH, stroke: "var(--line-strong)", "stroke-width": 1 }));
     }
 
-    // x labels: first, mid, last
     [0, Math.floor((dayKeys.length-1)/2), dayKeys.length-1].forEach(i => {
       const d = Number(dayKeys[i].split("-")[2]);
       const t = el("text", { x: xFor(i), y: H-4, fill: "var(--text-faint)", "font-size": 9, "text-anchor": "middle", "font-family": "var(--mono)" });
@@ -661,7 +799,6 @@
       svg.appendChild(el("circle", { cx: lastPt[0], cy: lastPt[1], r: id==="overall"?3.5:2.5, fill: s.color }));
     });
 
-    // hover layer
     const hitLine = el("line", { x1:0,x2:0,y1:padT,y2:padT+plotH, stroke:"var(--line-strong)", "stroke-width":1, opacity:0 });
     svg.appendChild(hitLine);
 
@@ -792,7 +929,7 @@
   }
 
   /* ============================================================
-     View switching (Today / Journal / Insights / Settings)
+     View switching (Today / Journal / Goals / History / Insights / Settings)
      ============================================================ */
   function switchView(view){
     state.currentView = view;
@@ -801,6 +938,7 @@
     $$(".menu-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
     if(view === "journal") renderJournal();
     if(view === "goals") renderGoals();
+    if(view === "history") renderHistory();
     if(view === "insights") renderInsights();
     if(view === "settings"){ updateSavedLabel(); renderAccountUI(); }
   }
@@ -838,9 +976,12 @@
   function flushJournal(){
     const ta = $("#journalEntry");
     if(!ta) return;
+    const hadContentBefore = !!(state.journal[journalDate] && state.journal[journalDate].trim());
     const val = ta.value;
     if(val.trim()) state.journal[journalDate] = val;
     else delete state.journal[journalDate];
+    const hasContentNow = !!val.trim();
+    if(!hadContentBefore && hasContentNow) addXP(5);
     saveState();
   }
 
@@ -908,140 +1049,25 @@
   }
 
   /* ============================================================
-     Insights
-     ============================================================ */
-  function renderInsights(){
-    const summary = $("#insightSummary");
-    const { current, best } = computeStreaks();
-    let totalChecks = 0;
-    Object.values(state.completions).forEach(bucket => { totalChecks += Object.keys(bucket).length; });
-    summary.innerHTML = `
-      <div class="stat"><span class="stat-value">${current}</span><span class="stat-label">current streak</span></div>
-      <div class="stat"><span class="stat-value">${best}</span><span class="stat-label">best streak</span></div>
-      <div class="stat"><span class="stat-value">${totalChecks}</span><span class="stat-label">total check-ins</span></div>
-    `;
-
-    const list = $("#insightList");
-    list.innerHTML = "";
-    if(state.habits.length === 0){
-      list.innerHTML = `<div class="insight-empty">Add a habit to see its stats here.</div>`;
-      return;
-    }
-    const todayKey = keyForDate(today);
-    state.habits.forEach(h => {
-      let possible = 0, sum = 0, doneDays = 0;
-      const [cy,cm,cd] = habitEffectiveStart(h).split("-").map(Number);
-      let cursor = new Date(cy, cm-1, cd);
-      while(keyForDate(cursor) <= todayKey){
-        const dk = keyForDate(cursor);
-        possible++;
-        sum += dayValue(h, dk);
-        if(dayDone(h, dk)) doneDays++;
-        cursor = addDays(cursor, 1);
-      }
-      const pct = possible === 0 ? 0 : Math.round(sum/possible);
-      const detail = h.mode === "count"
-        ? `${doneDays}/${possible} at target · ${pct}%`
-        : `${doneDays}/${possible} · ${pct}%`;
-      const row = document.createElement("div");
-      row.className = "insight-row";
-      row.innerHTML = `
-        <span class="insight-name">${escapeHtml(h.name)}</span>
-        <div class="insight-bar-track"><div class="insight-bar-fill" style="width:${pct}%; background:${h.color};"></div></div>
-        <span class="insight-pct">${detail}</span>
-      `;
-      list.appendChild(row);
-    });
-  }
-
-  /* ============================================================
-     Settings — export / import / reset
-     ============================================================ */
-  function showToast(msg){
-    const t = $("#settingsToast");
-    t.textContent = msg;
-    t.hidden = false;
-    clearTimeout(showToast._timer);
-    showToast._timer = setTimeout(() => { t.hidden = true; }, 2200);
-  }
-
-  function initSettings(){
-    $("#exportBtn").addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `discipline-log-backup-${keyForDate(today)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Backup downloaded.");
-    });
-
-    $("#importInput").addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try{
-          const parsed = JSON.parse(reader.result);
-          if(!parsed || typeof parsed !== "object" || !Array.isArray(parsed.habits)){
-            throw new Error("Not a valid backup file");
-          }
-          state = Object.assign(defaultState(), parsed);
-          saveState();
-          render();
-          renderJournal();
-          renderInsights();
-          showToast("Backup imported.");
-        }catch(err){
-          showToast("Couldn't read that file — is it a Discipline Log backup?");
-        }
-      };
-      reader.readAsText(file);
-      e.target.value = "";
-    });
-
-    $("#resetBtn").addEventListener("click", () => {
-      if(!confirm("This clears all habits, history, and journal entries on this device. Export a backup first if you want to keep them. Continue?")) return;
-      localStorage.removeItem(STORAGE_KEY);
-      state = defaultState();
-      journalDate = keyForDate(today);
-      saveState();
-      render();
-      renderJournal();
-      renderInsights();
-      showToast("All data cleared.");
-    });
-  }
-
-  /* ============================================================
-     Daily quote
-     ============================================================ */
-  function dayOfYear(dt){
-    const start = new Date(dt.getFullYear(), 0, 0);
-    return Math.floor((dt - start) / 86400000);
-  }
-
-  function renderQuote(){
-    const el = $("#quoteStrip");
-    if(!el || typeof QUOTES === "undefined" || QUOTES.length === 0) return;
-    const idx = dayOfYear(today) % QUOTES.length;
-    el.textContent = QUOTES[idx];
-  }
-
-  /* ============================================================
-     Goals — freeform, not tied to the daily grid
+     Goals
      ============================================================ */
   function addGoal(text, dueDate){
     const id = "g_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    state.goals.push({ id, text: text.trim(), done: false, dueDate: dueDate || "", createdAt: keyForDate(today) });
+    state.goals.push({ id, text: text.trim(), done: false, dueDate: dueDate || "", completedAt: null, createdAt: keyForDate(today) });
     saveState();
     renderGoals();
   }
 
   function toggleGoalDone(id){
     const g = state.goals.find(g => g.id === id);
-    if(g){ g.done = !g.done; saveState(); renderGoals(); }
+    if(g){
+      g.done = !g.done;
+      g.completedAt = g.done ? keyForDate(today) : null;
+      if(g.done) addXP(25);
+      saveState();
+      renderGoals();
+      checkAchievements();
+    }
   }
 
   function renameGoal(id, text){
@@ -1120,6 +1146,273 @@
   }
 
   /* ============================================================
+     My History — unified feed: manual notes + journal + goals + achievements
+     ============================================================ */
+  function addHistoryNote(text, date){
+    const id = "n_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    state.historyNotes.push({ id, text: text.trim(), date: date || keyForDate(today), createdAt: keyForDate(today) });
+    saveState();
+    renderHistory();
+  }
+
+  function deleteHistoryNote(id){
+    state.historyNotes = state.historyNotes.filter(n => n.id !== id);
+    saveState();
+    renderHistory();
+  }
+
+  function buildHistoryFeed(){
+    const items = [];
+    state.historyNotes.forEach(n => {
+      items.push({ date: n.date || n.createdAt, text: n.text, tag: "📝", type: "note", id: n.id });
+    });
+    Object.keys(state.journal).forEach(dk => {
+      const text = state.journal[dk];
+      if(text && text.trim()){
+        const preview = text.slice(0, 80).replace(/\n/g, " ");
+        items.push({ date: dk, text: "Journal: " + preview, tag: "🖊", type: "journal" });
+      }
+    });
+    state.goals.forEach(g => {
+      if(g.done && g.completedAt){
+        items.push({ date: g.completedAt, text: "Completed goal: " + g.text, tag: "🎯", type: "goal" });
+      }
+    });
+    state.achievements.forEach(a => {
+      items.push({ date: a.unlockedAt, text: "Achievement: " + a.title, tag: "🏆", type: "achievement" });
+    });
+    items.sort((a,b) => b.date.localeCompare(a.date));
+    return items;
+  }
+
+  function renderHistory(){
+    const list = $("#historyList");
+    if(!list) return;
+    const items = buildHistoryFeed();
+    list.innerHTML = "";
+    if(items.length === 0){
+      list.innerHTML = `<div class="goal-empty">Nothing logged yet — add something, or keep using the app and milestones will show up here.</div>`;
+      return;
+    }
+    items.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "history-item" + (item.type === "achievement" ? " achievement" : "");
+      row.innerHTML = `
+        <span class="history-tag">${item.tag}</span>
+        <div class="history-body">
+          <div class="history-text">${escapeHtml(item.text)}</div>
+          <div class="history-date">${item.date}</div>
+        </div>
+        ${item.type === "note" ? '<button class="history-delete" aria-label="Delete">×</button>' : ""}
+      `;
+      if(item.type === "note"){
+        $(".history-delete", row).addEventListener("click", () => deleteHistoryNote(item.id));
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function initHistory(){
+    const addBtn = $("#historyAddBtn");
+    const input = $("#historyInput");
+    const dateInput = $("#historyDateInput");
+    const commit = () => {
+      if(input.value.trim()){
+        addHistoryNote(input.value, dateInput.value);
+        input.value = "";
+        dateInput.value = "";
+        input.focus();
+      }
+    };
+    addBtn.addEventListener("click", commit);
+    input.addEventListener("keydown", e => { if(e.key === "Enter") commit(); });
+  }
+
+  /* ============================================================
+     Insights
+     ============================================================ */
+  function renderXpCard(){
+    const prog = xpProgress(state.xp || 0);
+    const levelText = $("#xpLevelText"), amountText = $("#xpAmountText"), bar = $("#xpBarFill");
+    if(levelText) levelText.textContent = `Level ${prog.level} — ${titleForLevel(prog.level)}`;
+    if(amountText) amountText.textContent = `${state.xp || 0} XP`;
+    if(bar) bar.style.width = prog.pct + "%";
+  }
+
+  function renderCategoryBreakdown(){
+    const list = $("#categoryList");
+    if(!list) return;
+    list.innerHTML = "";
+    const todayKey = keyForDate(today);
+    const present = CATEGORIES.filter(cat => state.habits.some(h => (h.category || "other") === cat.id));
+    if(present.length === 0){
+      list.innerHTML = `<div class="insight-empty">Add habits to see a category breakdown.</div>`;
+      return;
+    }
+    present.forEach(cat => {
+      const habitsInCat = state.habits.filter(h => (h.category || "other") === cat.id);
+      let sum = 0, count = 0;
+      habitsInCat.forEach(h => {
+        const [cy,cm,cd] = habitEffectiveStart(h).split("-").map(Number);
+        let cursor = new Date(cy, cm-1, cd);
+        while(keyForDate(cursor) <= todayKey){
+          sum += dayValue(h, keyForDate(cursor));
+          count++;
+          cursor = addDays(cursor, 1);
+        }
+      });
+      const pct = count === 0 ? 0 : Math.round(sum/count);
+      const row = document.createElement("div");
+      row.className = "insight-row";
+      row.innerHTML = `
+        <span class="insight-name">${cat.label}</span>
+        <div class="insight-bar-track"><div class="insight-bar-fill" style="width:${pct}%; background:${cat.color};"></div></div>
+        <span class="insight-pct">${pct}%</span>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  function renderInsights(){
+    renderXpCard();
+    renderCategoryBreakdown();
+
+    const summary = $("#insightSummary");
+    const { current, best } = computeStreaks();
+    let totalChecks = 0;
+    Object.keys(state.completions).forEach(hid => {
+      const h = state.habits.find(x => x.id === hid);
+      const bucket = state.completions[hid] || {};
+      Object.keys(bucket).forEach(dk => { if(h ? dayDone(h, dk) : bucket[dk]) totalChecks++; });
+    });
+    summary.innerHTML = `
+      <div class="stat"><span class="stat-value">${current}</span><span class="stat-label">current streak</span></div>
+      <div class="stat"><span class="stat-value">${best}</span><span class="stat-label">best streak</span></div>
+      <div class="stat"><span class="stat-value">${totalChecks}</span><span class="stat-label">total check-ins</span></div>
+      <div class="stat"><span class="stat-value">${state.achievements.length}</span><span class="stat-label">badges</span></div>
+    `;
+
+    const list = $("#insightList");
+    list.innerHTML = "";
+    if(state.habits.length === 0){
+      list.innerHTML = `<div class="insight-empty">Add a habit to see its stats here.</div>`;
+      return;
+    }
+    const todayKey = keyForDate(today);
+    state.habits.forEach(h => {
+      let possible = 0, sum = 0, doneDays = 0;
+      const [cy,cm,cd] = habitEffectiveStart(h).split("-").map(Number);
+      let cursor = new Date(cy, cm-1, cd);
+      while(keyForDate(cursor) <= todayKey){
+        const dk = keyForDate(cursor);
+        possible++;
+        sum += dayValue(h, dk);
+        if(dayDone(h, dk)) doneDays++;
+        cursor = addDays(cursor, 1);
+      }
+      const pct = possible === 0 ? 0 : Math.round(sum/possible);
+      const detail = h.mode === "count"
+        ? `${doneDays}/${possible} at target · ${pct}%`
+        : `${doneDays}/${possible} · ${pct}%`;
+      const row = document.createElement("div");
+      row.className = "insight-row";
+      row.innerHTML = `
+        <span class="insight-name">${escapeHtml(h.name)}</span>
+        <div class="insight-bar-track"><div class="insight-bar-fill" style="width:${pct}%; background:${h.color};"></div></div>
+        <span class="insight-pct">${detail}</span>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  /* ============================================================
+     Settings — profile / export / import / reset
+     ============================================================ */
+  function showToast(msg){
+    const t = $("#appToast");
+    if(!t) return;
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => { t.hidden = true; }, 2200);
+  }
+
+  function initProfile(){
+    const input = $("#birthYearInput");
+    if(!input) return;
+    if(state.profile && state.profile.birthYear) input.value = state.profile.birthYear;
+    input.addEventListener("change", () => {
+      const val = parseInt(input.value, 10);
+      if(val && val >= 1900 && val <= today.getFullYear()){
+        state.profile.birthYear = val;
+        saveState();
+        renderAgeRing();
+        checkAchievements();
+      }
+    });
+  }
+
+  function initSettings(){
+    $("#exportBtn").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `stat-log-backup-${keyForDate(today)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Backup downloaded.");
+    });
+
+    $("#importInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{
+          const parsed = JSON.parse(reader.result);
+          if(!parsed || typeof parsed !== "object" || !Array.isArray(parsed.habits)){
+            throw new Error("Not a valid backup file");
+          }
+          state = Object.assign(defaultState(), parsed);
+          if(!state.profile) state.profile = { birthYear: null };
+          saveState();
+          render();
+          renderJournal();
+          renderGoals();
+          renderHistory();
+          renderInsights();
+          renderAgeRing();
+          const birthInput = $("#birthYearInput");
+          if(birthInput) birthInput.value = state.profile.birthYear || "";
+          showToast("Backup imported.");
+        }catch(err){
+          showToast("Couldn't read that file — is it a Stat Log backup?");
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    });
+
+    $("#resetBtn").addEventListener("click", () => {
+      if(!confirm("This clears all habits, history, goals, and journal entries on this device. Export a backup first if you want to keep them. Continue?")) return;
+      localStorage.removeItem(STORAGE_KEY);
+      state = defaultState();
+      journalDate = keyForDate(today);
+      saveState();
+      render();
+      renderJournal();
+      renderGoals();
+      renderHistory();
+      renderInsights();
+      renderAgeRing();
+      const birthInput = $("#birthYearInput");
+      if(birthInput) birthInput.value = "";
+      showToast("All data cleared.");
+    });
+  }
+
+  /* ============================================================
      Account — Netlify Identity login + remote sync via Netlify Blobs
      ============================================================ */
   const STATE_ENDPOINT = "/.netlify/functions/state";
@@ -1146,19 +1439,31 @@
   function scheduleRemotePush(){
     if(!currentIdentityUser()) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(pushRemoteState, 1500);
+    pushTimer = setTimeout(() => pushRemoteState(false), 1500);
   }
 
-  async function pushRemoteState(){
+  async function pushRemoteState(manual){
     const headers = await authHeaders();
-    if(!headers) return;
+    if(!headers){
+      if(manual) showToast("Not logged in — can't sync.");
+      return;
+    }
     syncing = true;
     updateSyncedLabel();
     try{
       const res = await fetch(STATE_ENDPOINT, { method: "POST", headers, body: JSON.stringify(state) });
-      if(res.ok){ lastSyncedAt = new Date(); }
+      if(res.ok){
+        lastSyncedAt = new Date();
+        if(manual) showToast("Synced.");
+      }else{
+        let detail = "";
+        try{ const body = await res.json(); if(body.error) detail = ": " + body.error; }catch(e){}
+        console.warn("Sync push failed with status", res.status, detail);
+        showToast(`Sync failed (${res.status})${detail}`);
+      }
     }catch(e){
       console.warn("Remote sync push failed.", e);
+      showToast("Sync failed — network error.");
     }
     syncing = false;
     updateSyncedLabel();
@@ -1203,7 +1508,6 @@
       actions.innerHTML = "";
       const logoutBtn = document.createElement("button");
       logoutBtn.className = "settings-btn danger";
-      logoutBtn.id = "logoutBtn";
       logoutBtn.textContent = "Log out";
       logoutBtn.addEventListener("click", () => netlifyIdentity.logout());
       actions.appendChild(logoutBtn);
@@ -1211,7 +1515,7 @@
       const syncBtn = document.createElement("button");
       syncBtn.className = "settings-btn";
       syncBtn.textContent = "Sync now";
-      syncBtn.addEventListener("click", pushRemoteState);
+      syncBtn.addEventListener("click", () => pushRemoteState(true));
       actions.appendChild(syncBtn);
     }else{
       note.textContent = "Log in to access your habits from another device. Your data on this device stays put either way.";
@@ -1227,16 +1531,20 @@
     const remote = await pullRemoteState();
     if(remote){
       state = Object.assign(defaultState(), remote);
+      if(!state.profile) state.profile = { birthYear: null };
       journalDate = keyForDate(today);
       saveStateLocalOnly();
       render();
       renderJournal();
       renderGoals();
+      renderHistory();
       renderInsights();
+      renderAgeRing();
+      const birthInput = $("#birthYearInput");
+      if(birthInput) birthInput.value = state.profile.birthYear || "";
       showToast("Synced data loaded from your account.");
     }else{
-      // First login for this account — push what's on this device up as the baseline.
-      await pushRemoteState();
+      await pushRemoteState(false);
       showToast("This device's data is now synced to your account.");
     }
     renderAccountUI();
@@ -1257,6 +1565,21 @@
       renderAccountUI();
     });
     netlifyIdentity.init();
+  }
+
+  /* ============================================================
+     Daily quote
+     ============================================================ */
+  function dayOfYear(dt){
+    const start = new Date(dt.getFullYear(), 0, 0);
+    return Math.floor((dt - start) / 86400000);
+  }
+
+  function renderQuote(){
+    const el = $("#quoteStrip");
+    if(!el || typeof QUOTES === "undefined" || QUOTES.length === 0) return;
+    const idx = dayOfYear(today) % QUOTES.length;
+    el.textContent = QUOTES[idx];
   }
 
   /* ============================================================
@@ -1287,10 +1610,13 @@
     initMenu();
     initJournal();
     initGoals();
+    initHistory();
     initSettings();
+    initProfile();
     initAccount();
     render();
     renderQuote();
+    renderAgeRing();
     switchView(state.currentView || "today");
     updateSavedLabel();
 
